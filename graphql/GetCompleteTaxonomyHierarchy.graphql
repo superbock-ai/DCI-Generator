@@ -1,0 +1,341 @@
+query GetCompleteTaxonomyHierarchy($dcm_id: ID!) {
+  taxonomy_items(
+    filter: { 
+      domain_context_model: { id: { _eq: $dcm_id } } 
+      category: { _eq: "product_type" }
+    }
+  ) {
+    id
+    status
+    taxonomy_item_name
+    category
+    data_type
+    description
+    unit
+    aliases
+    examples
+    parent_relationships(
+      filter: { 
+        related_taxonomy_item: {
+          domain_context_model: { id: { _eq: $dcm_id } }
+          category: { _eq: "segment_type" }
+        }
+      }
+      limit: 1
+    ) {
+      id
+      related_taxonomy_item {
+        id
+        taxonomy_item_name
+        category
+        data_type
+        description
+        unit
+        llm_instruction
+        aliases
+        examples
+        parent_relationships(
+          filter: { 
+            related_taxonomy_item: {
+              domain_context_model: { id: { _eq: $dcm_id } }
+              category: { _eq: "benefit_type" }
+            }
+          }
+          limit: 2
+        ) {
+          id
+          related_taxonomy_item {
+            id
+            taxonomy_item_name
+            category
+            data_type
+            description
+            unit
+            aliases
+            examples
+            llm_instruction
+            benefit_conditions: parent_relationships(
+              filter: { 
+                related_taxonomy_item: {
+                  domain_context_model: { id: { _eq: $dcm_id } }
+                  category: { _eq: "condition_type" }
+                }
+              }
+            ) {
+              id
+              related_taxonomy_item {
+                id
+                taxonomy_item_name
+                category
+                data_type
+                description
+                unit
+                aliases
+                examples
+                llm_instruction
+              }
+              product_references: dcm_conditions {
+                id
+                condition_name
+                description
+                document_reference
+                section_reference
+                full_text_part
+                llm_summary
+                dcm_product { id }
+              }
+            }
+            benefit_limits: parent_relationships(
+              filter: { 
+                related_taxonomy_item: {
+                  domain_context_model: { id: { _eq: $dcm_id } }
+                  category: { _eq: "limit_type" }
+                }
+              }
+            ) {
+              id
+              related_taxonomy_item {
+                id
+                taxonomy_item_name
+                category
+                data_type
+                description
+                unit
+                aliases
+                examples
+                llm_instruction
+              }
+              product_references: dcm_limits {
+                id
+                limit_name
+                limit_value
+                limit_unit
+                description
+                document_reference
+                section_reference
+                full_text_part
+                llm_summary
+                dcm_product { id }
+              }
+            }
+            benefit_exclusions: parent_relationships(
+              filter: { 
+                related_taxonomy_item: {
+                  domain_context_model: { id: { _eq: $dcm_id } }
+                  category: { _eq: "exclusion_type" }
+                }
+              }
+            ) {
+              id
+              related_taxonomy_item {
+                id
+                taxonomy_item_name
+                category
+                data_type
+                description
+                unit
+                aliases
+                examples
+                llm_instruction
+              }
+              product_references: dcm_exclusions {
+                id
+                exclusion_name
+                description
+                document_reference
+                section_reference
+                full_text_part
+                llm_summary
+                dcm_product { id }
+              }
+            }
+          }
+        }
+        segment_conditions: parent_relationships(
+          filter: { 
+            related_taxonomy_item: {
+              domain_context_model: { id: { _eq: $dcm_id } }
+              category: { _eq: "condition_type" }
+            }
+          }
+        ) {
+          id
+          related_taxonomy_item {
+            id
+            taxonomy_item_name
+            category
+            data_type
+            description
+            unit
+            aliases
+            examples
+          }
+          product_references: dcm_conditions {
+            id
+            condition_name
+            description
+            document_reference
+            section_reference
+            full_text_part
+            llm_summary
+            dcm_product { id }
+          }
+        }
+        segment_limits: parent_relationships(
+          filter: { 
+            related_taxonomy_item: {
+              domain_context_model: { id: { _eq: $dcm_id } }
+              category: { _eq: "limit_type" }
+            }
+          }
+        ) {
+          id
+          related_taxonomy_item {
+            id
+            taxonomy_item_name
+            category
+            data_type
+            description
+            unit
+            aliases
+            examples
+          }
+          product_references: dcm_limits {
+            id
+            limit_name
+            limit_value
+            limit_unit
+            description
+            document_reference
+            section_reference
+            full_text_part
+            llm_summary
+            dcm_product { id }
+          }
+        }
+        segment_exclusions: parent_relationships(
+          filter: { 
+            related_taxonomy_item: {
+              domain_context_model: { id: { _eq: $dcm_id } }
+              category: { _eq: "exclusion_type" }
+            }
+          }
+        ) {
+          id
+          related_taxonomy_item {
+            id
+            taxonomy_item_name
+            category
+            data_type
+            description
+            unit
+            aliases
+            examples
+          }
+          product_references: dcm_exclusions {
+            id
+            exclusion_name
+            description
+            document_reference
+            section_reference
+            full_text_part
+            llm_summary
+            dcm_product { id }
+          }
+        }
+      }
+    }
+    product_conditions: parent_relationships(
+      filter: { 
+        related_taxonomy_item: {
+          domain_context_model: { id: { _eq: $dcm_id } }
+          category: { _eq: "condition_type" }
+        }
+      }
+    ) {
+      id
+      related_taxonomy_item {
+        id
+        taxonomy_item_name
+        category
+        data_type
+        description
+        unit
+        aliases
+        examples
+      }
+      product_references: dcm_conditions {
+        id
+        condition_name
+        description
+        document_reference
+        section_reference
+        full_text_part
+        llm_summary
+        dcm_product { id }
+      }
+    }
+    product_limits: parent_relationships(
+      filter: { 
+        related_taxonomy_item: {
+          domain_context_model: { id: { _eq: $dcm_id } }
+          category: { _eq: "limit_type" }
+        }
+      }
+    ) {
+      id
+      related_taxonomy_item {
+        id
+        taxonomy_item_name
+        category
+        data_type
+        description
+        unit
+        aliases
+        examples
+      }
+      product_references: dcm_limits {
+        id
+        limit_name
+        limit_value
+        limit_unit
+        description
+        document_reference
+        section_reference
+        full_text_part
+        llm_summary
+        dcm_product { id }
+      }
+    }
+    product_exclusions: parent_relationships(
+      filter: { 
+        related_taxonomy_item: {
+          domain_context_model: { id: { _eq: $dcm_id } }
+          category: { _eq: "exclusion_type" }
+        }
+      }
+    ) {
+      id
+      related_taxonomy_item {
+        id
+        taxonomy_item_name
+        category
+        data_type
+        description
+        unit
+        aliases
+        examples
+      }
+      product_references: dcm_exclusions {
+        id
+        exclusion_name
+        description
+        document_reference
+        section_reference
+        full_text_part
+        llm_summary
+        dcm_product { id }
+      }
+    }
+  }
+}

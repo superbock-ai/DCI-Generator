@@ -1,0 +1,121 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Development Commands
+
+### Dependency Management
+- **Install dependencies**: `uv sync`
+- **Add new dependency**: `uv add <package_name>`
+
+### Main Script Usage
+- **Basic analysis**: `uv run main.py travel-insurance/markdown/axa.md`
+- **With JSON export**: `uv run main.py travel-insurance/markdown/axa.md --export`
+- **With detailed results**: `uv run main.py travel-insurance/markdown/axa.md --detailed`
+- **Disable caching**: `uv run main.py travel-insurance/markdown/axa.md --no-cache`
+- **All options**: `uv run main.py travel-insurance/markdown/axa.md -e -d`
+
+### Development Environment
+- **Interactive development**: Use `dev.ipynb` Jupyter notebook for experimentation and testing
+- **Run notebook**: `jupyter notebook dev.ipynb` (or use VS Code/PyCharm Jupyter integration)
+
+## Architecture Overview
+
+This is a **Domain Context Item (DCI) Generator** for comprehensive insurance document analysis that performs three-tier analysis: segments → benefits → details (limits/conditions/exclusions) using AI.
+
+### Core System
+- **CLI Application**: Command-line interface for comprehensive insurance document analysis
+- **GraphQL Integration**: Fetches live taxonomy hierarchies from Quinsights platform
+- **Three-Tier Analysis**: Segments → Benefits → Details (limits/conditions/exclusions)
+- **LLM Analysis**: Uses OpenAI models with enhanced structured output (AnalysisResult)
+- **Conditional Processing**: Only analyzes benefits for found segments, details for found benefits
+- **Parallel Processing**: Each tier analyzes all items simultaneously for maximum speed
+- **Context-Aware Prompts**: Each tier builds on previous analysis results
+- **Comprehensive Caching**: In-memory caching across all analysis tiers
+
+### Key Files
+- `main.py`: Production CLI application with DocumentAnalyzer class
+- `dev.ipynb`: Development environment for experimentation
+- `graphql/GetCompleteTaxonomyHierarchy.graphql`: GraphQL query for fetching taxonomy data
+- `example_gql_response.json`: Sample GraphQL response showing taxonomy structure
+- `segment_structured_output.json`: JSON schema for structured LLM output
+- `.env.example`: Template for environment variables
+- `.env`: Environment configuration (gitignored)
+
+### Main.py Functionality
+The `main.py` script implements a comprehensive three-tier document analysis pipeline:
+
+1. **Environment Setup**: Loads configuration from .env file
+2. **GraphQL Fetching**: Retrieves complete taxonomy (segments, benefits, limits/conditions/exclusions) from live endpoint
+3. **Document Loading**: Reads specified markdown document
+4. **Tier 1 - Segment Analysis**: Analyzes all segments in parallel using RunnableParallel
+5. **Tier 2 - Benefit Analysis**: Conditionally analyzes benefits for found segments in parallel
+6. **Tier 3 - Detail Analysis**: Conditionally analyzes limits/conditions/exclusions for found benefits in parallel
+7. **Context Integration**: Each tier uses results from previous tiers in prompts
+8. **Structured Output**: Returns comprehensive results using enhanced AnalysisResult schema
+9. **Export Options**: Can save complete hierarchical results to JSON and show detailed information
+
+### Configuration (.env file)
+Required environment variables:
+- `OPENAI_API_KEY`: Your OpenAI API key
+- `GRAPHQL_AUTH_TOKEN`: Authentication token for GraphQL endpoint
+- `OPENAI_MODEL`: Model to use (optional, defaults to gpt-4o-mini)
+- `GRAPHQL_URL`: GraphQL endpoint (optional, defaults to UAT)
+
+### Data Flow Architecture
+1. **Configuration Loading**: Environment variables loaded from .env
+2. **Taxonomy Retrieval**: Live GraphQL query fetches complete hierarchy (segments → benefits → details)
+3. **Tier 1 Setup**: Creates LangChain analysis chains for each segment
+4. **Tier 1 Analysis**: Parallel processing analyzes document for all segments
+5. **Tier 2 Setup**: Creates benefit chains only for found segments
+6. **Tier 2 Analysis**: Parallel processing analyzes benefits with segment context
+7. **Tier 3 Setup**: Creates detail chains only for found benefits
+8. **Tier 3 Analysis**: Parallel processing analyzes limits/conditions/exclusions with segment + benefit context
+9. **Results Integration**: Combines all tiers into comprehensive hierarchical output
+
+### Analysis Result Schema (AnalysisResult)
+Each analysis item (segment/benefit/detail) returns:
+- `section_reference`: Document section where item is found
+- `full_text_part`: Relevant text from the document
+- `llm_summary`: AI-generated summary of the coverage
+- `item_name`: Name of the analyzed item (generalized from segment_name)
+- `is_included`: Boolean indicating if item is covered
+- `description`: LLM-extracted description of what the item covers
+- `unit`: LLM-extracted unit of measurement (e.g., CHF, days, percentage)
+- `value`: LLM-extracted specific value/amount found in document
+
+### GraphQL Schema Structure
+The system works with a complete insurance taxonomy hierarchy:
+- **product_type** → **segment_type** → **benefit_type** → **limit_type/condition_type/exclusion_type**
+- Current segments: `luggage_travel_delay` and `home_assistance`
+- Each segment contains multiple benefits with their own limits, conditions, and exclusions
+- All items include descriptions, aliases, examples, and specific LLM analysis instructions for German insurance documents
+
+### Three-Tier Analysis Flow
+```
+SEGMENTS (Tier 1): Identify coverage areas in document
+    ↓ (only for found segments)
+BENEFITS (Tier 2): Identify specific benefits within found segments
+    ↓ (only for found benefits)
+DETAILS (Tier 3): Identify limits, conditions, exclusions for found benefits
+```
+
+### Dependencies
+- `gql`: GraphQL client for Python
+- `langchain` & `langchain-openai`: LLM orchestration and OpenAI integration
+- `openai`: OpenAI API client
+- `python-dotenv`: Environment variable management
+- `pydantic`: Data validation and structured output
+- `requests`: HTTP library for API communications
+
+### Caching
+- **Comprehensive in-memory caching**: LangChain automatic caching across all three analysis tiers
+- **Performance**: Subsequent runs on same document are nearly instant for all analyzed items
+- **Development**: Perfect for testing and prompt iteration across the entire analysis pipeline
+- **Intelligent cache keys**: Based on document content + analysis context + model parameters
+- **Control**: `--no-cache` flag to disable when needed
+
+### Security
+- **Environment variables**: All secrets stored in .env file
+- **Gitignored secrets**: .env file excluded from version control
+- **Token validation**: Startup checks for required credentials

@@ -1,0 +1,352 @@
+{
+  "taxonomy_items": [
+    {
+      "id": "7608df3e-839b-4e53-bcc7-1296e91986bf",
+      "status": "published",
+      "taxonomy_item_name": "travel_insurance_product",
+      "category": "product_type",
+      "data_type": "string",
+      "description": "Virtual root category for all travel insurance product segments",
+      "unit": null,
+      "aliases": [
+        "travel_insurance",
+        "insurance_product",
+        "product_root"
+      ],
+      "examples": [
+        "Reiseversicherung",
+        "Assurance voyage"
+      ],
+      "parent_relationships": [
+        {
+          "id": "04831613-87e6-4d71-ae15-4f20b93b4bb3",
+          "related_taxonomy_item": {
+            "id": "4ec1fb50-56e9-4976-b3ad-ae5cfd863a09",
+            "taxonomy_item_name": "luggage_travel_delay",
+            "category": "segment_type",
+            "data_type": "string",
+            "description": "Coverage for luggage loss, damage, and travel delays",
+            "unit": null,
+            "llm_instruction": "Identify coverage areas and insurance modules related to luggage loss, damage, and travel delays. Look for German terms like 'Reisegep\u00e4ck', 'Gep\u00e4ckversp\u00e4tung', 'Reiseverz\u00f6gerung', 'Gep\u00e4ckversicherung' that indicate major insurance segments or coverage categories. Search for module headings (e.g., 'Modul I'), section titles, and coverage area descriptions. Pay attention to terms like 'Versicherungsbereich', 'Deckungsbereich', 'Baustein', 'Leistungsgruppe', 'Assistance', 'Schutz', 'Versicherung'. Look for comprehensive coverage descriptions that group related benefits together for luggage and delay scenarios. Identify whether segments are mandatory ('obligatorisch', 'Grunddeckung') or optional ('fakultativ', 'Zusatzdeckung', 'optional'). Check for segment-specific conditions, exclusions, and limits that apply to the entire luggage coverage area.",
+            "aliases": [
+              "luggage",
+              "baggage",
+              "travel_delay",
+              "luggage_insurance"
+            ],
+            "examples": [
+              "Reisegep\u00e4ck",
+              "Gep\u00e4ckversp\u00e4tung",
+              "Reiseverz\u00f6gerung",
+              "Gep\u00e4ckversicherung"
+            ],
+            "parent_relationships": [
+              {
+                "id": "23f8c260-4ca6-45b4-8389-67363ed636fb",
+                "related_taxonomy_item": {
+                  "id": "ba1d657e-527c-45e7-9c75-35a8b56c012e",
+                  "taxonomy_item_name": "missed_connection",
+                  "category": "benefit_type",
+                  "data_type": "number",
+                  "description": "Coverage for missed connections and departures",
+                  "unit": "CHF",
+                  "aliases": [
+                    "missed_departure",
+                    "missed_flight",
+                    "connection_missed"
+                  ],
+                  "examples": [
+                    "Verpasste Abreise",
+                    "Verpasster Anschluss",
+                    "Anschlussflug verpasst",
+                    "Vers\u00e4umte Abreise"
+                  ],
+                  "llm_instruction": "When analyzing German AVB documents, look for coverage of Coverage for missed connections and departures. Search for specific German terms like Verpasste Abreise', 'Verpasster Anschluss', 'Anschlussflug verpasst', 'Vers\u00e4umte Abreise. Focus on sections that describe what is covered, reimbursed, or provided as a service. Look for positive coverage language such as '\u00fcbernimmt', 'erstattet', 'zahlt', 'deckt ab', 'leistet', 'gew\u00e4hrt', 'tr\u00e4gt die Kosten'. Pay attention to coverage descriptions in assistance modules (Personen-Assistance, Fahrzeug-Assistance), medical sections (Heilungskosten), or specific benefit categories. Include both direct payment scenarios ('direkte Kosten\u00fcbernahme') and reimbursement scenarios ('R\u00fcckerstattung'). Look for benefit amounts, coverage limits, and scope of services. Check for references to 24-hour services, emergency situations, or specific service providers. Specifically focus on coverage for missed connections and departures.",
+                  "benefit_conditions": [],
+                  "benefit_limits": [
+                    {
+                      "id": "5efbb25a-2e62-4452-a346-c7c24f99e920",
+                      "related_taxonomy_item": {
+                        "id": "608ddedc-7bd8-4dcb-ae00-88e126001d9b",
+                        "taxonomy_item_name": "maximum_coverage_amount",
+                        "category": "limit_type",
+                        "data_type": "number",
+                        "description": "Maximum total coverage amount",
+                        "unit": "CHF",
+                        "aliases": [
+                          "coverage_limit",
+                          "max_amount",
+                          "insurance_sum"
+                        ],
+                        "examples": [
+                          "Maximale Deckungssumme",
+                          "H\u00f6chstbetrag",
+                          "Versicherungssumme"
+                        ],
+                        "llm_instruction": "When analyzing German AVB documents, look for Maximum total coverage amount and insurance limits. Search for specific German terms like Maximale Deckungssumme', 'H\u00f6chstbetrag', 'Versicherungssumme, 'bis zu', 'maximal', 'h\u00f6chstens'. Focus on numerical limits, caps, and maximum coverage amounts that define coverage boundaries. Look for specific monetary amounts in CHF, EUR, or other currencies. Pay attention to phrases like 'bis zu CHF 100'000', 'maximal EUR 50'000', 'H\u00f6chstbetrag von CHF 25'000'. Check for different limits that may apply per person, per incident, per trip, or annually. Look in benefit descriptions, coverage tables, and limit specifications. Include both overall policy limits and specific benefit limits. Watch for phrases indicating maximum coverage amounts such as 'begrenzt auf', 'beschr\u00e4nkt auf', 'nicht mehr als', 'Obergrenze'."
+                      },
+                      "product_references": []
+                    }
+                  ],
+                  "benefit_exclusions": []
+                }
+              },
+              {
+                "id": "62d3cb1d-f1b6-4ea6-805a-89aeb76282f4",
+                "related_taxonomy_item": {
+                  "id": "f0f07d9f-7b95-4a52-b76b-46a4e2e58a9d",
+                  "taxonomy_item_name": "essential_purchases",
+                  "category": "benefit_type",
+                  "data_type": "number",
+                  "description": "Emergency purchases due to luggage delay",
+                  "unit": "CHF",
+                  "aliases": [
+                    "emergency_purchases",
+                    "essential_purchases",
+                    "necessary_purchases"
+                  ],
+                  "examples": [
+                    "Notwendige Eink\u00e4ufe",
+                    "Ersatzk\u00e4ufe",
+                    "Dringender Bedarf",
+                    "Zwingend n\u00f6tige Ersatzk\u00e4ufe"
+                  ],
+                  "llm_instruction": "When analyzing German AVB documents, look for coverage of Emergency purchases due to luggage delay. Search for specific German terms like Notwendige Eink\u00e4ufe', 'Ersatzk\u00e4ufe', 'Dringender Bedarf', 'Zwingend n\u00f6tige Ersatzk\u00e4ufe. Focus on sections that describe what is covered, reimbursed, or provided as a service. Look for positive coverage language such as '\u00fcbernimmt', 'erstattet', 'zahlt', 'deckt ab', 'leistet', 'gew\u00e4hrt', 'tr\u00e4gt die Kosten'. Pay attention to coverage descriptions in assistance modules (Personen-Assistance, Fahrzeug-Assistance), medical sections (Heilungskosten), or specific benefit categories. Include both direct payment scenarios ('direkte Kosten\u00fcbernahme') and reimbursement scenarios ('R\u00fcckerstattung'). Look for benefit amounts, coverage limits, and scope of services. Check for references to 24-hour services, emergency situations, or specific service providers. Specifically focus on emergency purchases due to luggage delay.",
+                  "benefit_conditions": [],
+                  "benefit_limits": [
+                    {
+                      "id": "97b8a0a0-0514-4a97-9123-b3e6e95ebbef",
+                      "related_taxonomy_item": {
+                        "id": "608ddedc-7bd8-4dcb-ae00-88e126001d9b",
+                        "taxonomy_item_name": "maximum_coverage_amount",
+                        "category": "limit_type",
+                        "data_type": "number",
+                        "description": "Maximum total coverage amount",
+                        "unit": "CHF",
+                        "aliases": [
+                          "coverage_limit",
+                          "max_amount",
+                          "insurance_sum"
+                        ],
+                        "examples": [
+                          "Maximale Deckungssumme",
+                          "H\u00f6chstbetrag",
+                          "Versicherungssumme"
+                        ],
+                        "llm_instruction": "When analyzing German AVB documents, look for Maximum total coverage amount and insurance limits. Search for specific German terms like Maximale Deckungssumme', 'H\u00f6chstbetrag', 'Versicherungssumme, 'bis zu', 'maximal', 'h\u00f6chstens'. Focus on numerical limits, caps, and maximum coverage amounts that define coverage boundaries. Look for specific monetary amounts in CHF, EUR, or other currencies. Pay attention to phrases like 'bis zu CHF 100'000', 'maximal EUR 50'000', 'H\u00f6chstbetrag von CHF 25'000'. Check for different limits that may apply per person, per incident, per trip, or annually. Look in benefit descriptions, coverage tables, and limit specifications. Include both overall policy limits and specific benefit limits. Watch for phrases indicating maximum coverage amounts such as 'begrenzt auf', 'beschr\u00e4nkt auf', 'nicht mehr als', 'Obergrenze'."
+                      },
+                      "product_references": []
+                    }
+                  ],
+                  "benefit_exclusions": []
+                }
+              }
+            ],
+            "segment_conditions": [
+              {
+                "id": "387f6239-9a5b-447c-b023-bb45b28cdb7c",
+                "related_taxonomy_item": {
+                  "id": "5a7933cd-a519-4df1-badc-7c9b3c05a4fc",
+                  "taxonomy_item_name": "documentation_requirements",
+                  "category": "condition_type",
+                  "data_type": "string",
+                  "description": "Required documentation for claims",
+                  "unit": null,
+                  "aliases": [
+                    "required_documents",
+                    "documentation",
+                    "proof_requirements"
+                  ],
+                  "examples": [
+                    "\u00c4rztliches Attest",
+                    "Polizeibericht",
+                    "Belege",
+                    "Nachweise",
+                    "Best\u00e4tigung"
+                  ]
+                },
+                "product_references": []
+              },
+              {
+                "id": "7de16400-783d-4fe1-81a1-55debd1a5a02",
+                "related_taxonomy_item": {
+                  "id": "07e54d11-c0e5-4c46-b7bc-b685ab9b9492",
+                  "taxonomy_item_name": "minimum_travel_distance",
+                  "category": "condition_type",
+                  "data_type": "string",
+                  "description": "Minimum distance from home for coverage",
+                  "unit": null,
+                  "aliases": [
+                    "distance_requirement",
+                    "minimum_distance",
+                    "travel_distance"
+                  ],
+                  "examples": [
+                    "30 km vom Wohnsitz",
+                    "Mindestentfernung",
+                    "Entfernung vom Wohnsitz",
+                    "Weiter als 30 km"
+                  ]
+                },
+                "product_references": []
+              }
+            ],
+            "segment_limits": [],
+            "segment_exclusions": [
+              {
+                "id": "8db86f49-edca-45bb-9138-d209196a642c",
+                "related_taxonomy_item": {
+                  "id": "66de1dac-9bc5-448e-b83e-a690056651a0",
+                  "taxonomy_item_name": "war_terrorism",
+                  "category": "exclusion_type",
+                  "data_type": "string",
+                  "description": "Exclusions related to war and terrorism",
+                  "unit": null,
+                  "aliases": [
+                    "war_events",
+                    "terrorist_acts",
+                    "armed_conflict"
+                  ],
+                  "examples": [
+                    "Krieg",
+                    "Terrorismus",
+                    "Kriegsereignisse",
+                    "Terroristische Ereignisse"
+                  ]
+                },
+                "product_references": []
+              },
+              {
+                "id": "94c1c261-446f-4950-b4d1-ba8a67321d53",
+                "related_taxonomy_item": {
+                  "id": "2d610280-7d0d-4d43-9154-59762732f1c8",
+                  "taxonomy_item_name": "natural_disasters",
+                  "category": "exclusion_type",
+                  "data_type": "string",
+                  "description": "Exclusions for natural catastrophes",
+                  "unit": null,
+                  "aliases": [
+                    "natural_catastrophes",
+                    "acts_of_nature",
+                    "natural_disasters"
+                  ],
+                  "examples": [
+                    "Naturkatastrophen",
+                    "Elementarsch\u00e4den",
+                    "Naturereignisse",
+                    "H\u00f6here Gewalt"
+                  ]
+                },
+                "product_references": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "74c17a87-1592-4a06-b2f5-4a58d80cec86",
+          "related_taxonomy_item": {
+            "id": "bb65f7ed-17b3-464f-868b-96978a0aa238",
+            "taxonomy_item_name": "home_assistance",
+            "category": "segment_type",
+            "data_type": "string",
+            "description": "Home assistance services during travel",
+            "unit": null,
+            "llm_instruction": "Identify coverage areas and insurance modules related to home assistance services during travel. Look for German terms like 'Home Assistance', 'Hausassistance', 'Heim-Service' that indicate major insurance segments or coverage categories. Search for module headings, section titles, and coverage area descriptions. Pay attention to terms like 'Versicherungsbereich', 'Deckungsbereich', 'Baustein', 'Leistungsgruppe', 'Assistance', 'Schutz', 'Versicherung'. Look for comprehensive coverage descriptions that group related benefits together for home assistance scenarios. Identify whether segments are mandatory ('obligatorisch', 'Grunddeckung') or optional ('fakultativ', 'Zusatzdeckung', 'optional'). Check for segment-specific conditions, exclusions, and limits that apply to the entire home assistance coverage area.",
+            "aliases": [
+              "home_services",
+              "house_assistance",
+              "domestic_assistance"
+            ],
+            "examples": [
+              "Home Assistance",
+              "Hausassistance",
+              "Heim-Service"
+            ],
+            "parent_relationships": [
+              {
+                "id": "3ff1f316-c417-4164-beb3-eb0039bbaa9e",
+                "related_taxonomy_item": {
+                  "id": "494ec856-c20c-4459-af8c-3bbf021a9cf9",
+                  "taxonomy_item_name": "home_emergency_repairs",
+                  "category": "benefit_type",
+                  "data_type": "number",
+                  "description": "Emergency home repairs during travel",
+                  "unit": "CHF",
+                  "aliases": [
+                    "emergency_home_repairs",
+                    "urgent_home_fixes",
+                    "home_emergency_service"
+                  ],
+                  "examples": [
+                    "Notfallreparaturen zu Hause",
+                    "Hausnotreparaturen",
+                    "Notf\u00e4lle zu Hause"
+                  ],
+                  "llm_instruction": "When analyzing German AVB documents, look for coverage of Emergency home repairs during travel. Search for specific German terms like Notfallreparaturen zu Hause', 'Hausnotreparaturen', 'Notf\u00e4lle zu Hause. Focus on sections that describe what is covered, reimbursed, or provided as a service. Look for positive coverage language such as '\u00fcbernimmt', 'erstattet', 'zahlt', 'deckt ab', 'leistet', 'gew\u00e4hrt', 'tr\u00e4gt die Kosten'. Pay attention to coverage descriptions in assistance modules (Personen-Assistance, Fahrzeug-Assistance), medical sections (Heilungskosten), or specific benefit categories. Include both direct payment scenarios ('direkte Kosten\u00fcbernahme') and reimbursement scenarios ('R\u00fcckerstattung'). Look for benefit amounts, coverage limits, and scope of services. Check for references to 24-hour services, emergency situations, or specific service providers. Specifically focus on emergency home repairs during travel.",
+                  "benefit_conditions": [],
+                  "benefit_limits": [],
+                  "benefit_exclusions": []
+                }
+              },
+              {
+                "id": "aeaf192a-fe4a-4180-bb77-d99504bb2f9a",
+                "related_taxonomy_item": {
+                  "id": "90e03618-988c-473d-9870-5340d0a0aaea",
+                  "taxonomy_item_name": "security_services",
+                  "category": "benefit_type",
+                  "data_type": "number",
+                  "description": "Home security services during travel",
+                  "unit": "CHF",
+                  "aliases": [
+                    "home_security",
+                    "security_monitoring",
+                    "house_watching"
+                  ],
+                  "examples": [
+                    "Sicherheitsdienste",
+                    "Haus\u00fcberwachung",
+                    "Sicherheitsservice"
+                  ],
+                  "llm_instruction": "When analyzing German AVB documents, look for coverage of Home security services during travel. Search for specific German terms like Sicherheitsdienste', 'Haus\u00fcberwachung', 'Sicherheitsservice. Focus on sections that describe what is covered, reimbursed, or provided as a service. Look for positive coverage language such as '\u00fcbernimmt', 'erstattet', 'zahlt', 'deckt ab', 'leistet', 'gew\u00e4hrt', 'tr\u00e4gt die Kosten'. Pay attention to coverage descriptions in assistance modules (Personen-Assistance, Fahrzeug-Assistance), medical sections (Heilungskosten), or specific benefit categories. Include both direct payment scenarios ('direkte Kosten\u00fcbernahme') and reimbursement scenarios ('R\u00fcckerstattung'). Look for benefit amounts, coverage limits, and scope of services. Check for references to 24-hour services, emergency situations, or specific service providers. Specifically focus on home security services during travel.",
+                  "benefit_conditions": [],
+                  "benefit_limits": [],
+                  "benefit_exclusions": []
+                }
+              }
+            ],
+            "segment_conditions": [
+              {
+                "id": "01287e35-ec8d-4464-885b-6e88bf81e9f3",
+                "related_taxonomy_item": {
+                  "id": "d3e36a95-6fd3-488d-88ed-f02626f41ee7",
+                  "taxonomy_item_name": "notification_timeframes",
+                  "category": "condition_type",
+                  "data_type": "string",
+                  "description": "Time limits for reporting claims",
+                  "unit": null,
+                  "aliases": [
+                    "reporting_deadlines",
+                    "notification_periods",
+                    "claim_deadlines"
+                  ],
+                  "examples": [
+                    "Meldefrist",
+                    "Unverz\u00fcgliche Meldung",
+                    "Sofortige Benachrichtigung",
+                    "Innerhalb 30 Tagen"
+                  ]
+                },
+                "product_references": []
+              }
+            ],
+            "segment_limits": [],
+            "segment_exclusions": []
+          }
+        }
+      ],
+      "product_conditions": [],
+      "product_limits": [],
+      "product_exclusions": []
+    }
+  ]
+}

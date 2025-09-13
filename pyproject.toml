@@ -1,0 +1,15 @@
+[project]
+name = "dci-generator"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "gql>=4.0.0",
+    "langchain>=0.3.27",
+    "langchain-openai>=0.3.33",
+    "openai>=1.107.2",
+    "python-dotenv>=1.1.1",
+    "requests>=2.32.5",
+    "requests-toolbelt>=1.0.0",
+]
