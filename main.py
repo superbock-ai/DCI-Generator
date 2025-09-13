@@ -26,8 +26,8 @@ class AnalysisResult(BaseModel):
     """Schema for structured extraction of any analysis item (segment, benefit, limit, condition, exclusion) from a document."""
     section_reference: str = Field(description="Reference or identifier for the section.")
     full_text_part: str = Field(description="Full text of the section part.")
-    llm_summary: str = Field(description="LLM-generated summary of the section.")
-    item_name: str = Field(description="Name of the item being analyzed.")
+    llm_summary: str = Field(description="LLM-generated summary of the section in the language of the input document.")
+    item_name: str = Field(description="Name of the item being analyzed in the language of the input document.")
     is_included: bool = Field(description="Indicates if the item is included.")
     description: str = Field(description="Description of what this item covers.")
     unit: str = Field(description="Unit of measurement if applicable (e.g., CHF, days, percentage).")
@@ -295,7 +295,7 @@ Benefit coverage description: {benefit_result.description}
 Benefit value found: {benefit_result.value}
 Benefit unit: {benefit_result.unit}
 
-This context helps you understand that both the segment and benefit exist in the document. Now analyze the ENTIRE document for the specific {detail_type} described below.
+This context helps you understand the segment and benefit for which you now need to find the details for. The detail is an important aspect of the current benefit. Analyze the ENTIRE document for the specific {detail_type} described below ALWAYS having the current segment and benefit in mind.
 
 {detail_type_title} ANALYSIS INSTRUCTIONS:
 {detail_info.get('llm_instruction', f'Look for {detail_type}s related to the {detail_info["benefit_name"]} benefit.')}
@@ -533,25 +533,84 @@ Always set item_name to: "{detail_info['name']}"
             else:
                 print("No segments found. Skipping benefit and detail analysis.")
 
-            # Step 4: Combine results
-            combined_results = {
-                'segments': segment_results,
-                'benefits': benefit_results,
-                'details': {
-                    'limits': {},
-                    'conditions': {},
-                    'exclusions': {}
-                },
-                'included_segments': included_segments
-            }
+            # Step 4: Build hierarchical tree structure
+            tree_structure = {"segments": []}
 
-            # Organize detail results by type
-            for detail_key, result in detail_results.items():
-                detail_data = self.detail_chains[detail_key]
-                detail_type = detail_data['detail_type']
-                combined_results['details'][detail_type][detail_key] = result
+            # Process each segment
+            for segment_name, segment_result in segment_results.items():
+                if segment_result.is_included:
+                    # Create segment with its data using taxonomy_item_name as key
+                    segment_item = {
+                        segment_name: {
+                            "item_name": segment_result.item_name,
+                            "is_included": segment_result.is_included,
+                            "section_reference": segment_result.section_reference,
+                            "full_text_part": segment_result.full_text_part,
+                            "llm_summary": segment_result.llm_summary,
+                            "description": segment_result.description,
+                            "unit": segment_result.unit,
+                            "value": segment_result.value,
+                            "benefits": []
+                        }
+                    }
 
-            return combined_results
+                    # Add benefits for this segment
+                    for benefit_key, benefit_result in benefit_results.items():
+                        if (benefit_result.is_included and 
+                            self.benefit_chains[benefit_key]['segment_name'] == segment_name):
+                            
+                            benefit_name = self.benefit_chains[benefit_key]['benefit_info']['name']
+                            benefit_item = {
+                                benefit_name: {
+                                    "item_name": benefit_result.item_name,
+                                    "is_included": benefit_result.is_included,
+                                    "section_reference": benefit_result.section_reference,
+                                    "full_text_part": benefit_result.full_text_part,
+                                    "llm_summary": benefit_result.llm_summary,
+                                    "description": benefit_result.description,
+                                    "unit": benefit_result.unit,
+                                    "value": benefit_result.value,
+                                    "limits": [],
+                                    "conditions": [],
+                                    "exclusions": []
+                                }
+                            }
+
+                            # Add details (limits, conditions, exclusions) for this benefit
+                            for detail_key, detail_result in detail_results.items():
+                                if detail_key in self.detail_chains:
+                                    detail_data = self.detail_chains[detail_key]
+                                    if (detail_result.is_included and 
+                                        detail_data['benefit_key'] == benefit_key):
+                                        
+                                        detail_type = detail_data['detail_type']
+                                        detail_name = detail_data['detail_info']['name']
+                                        detail_item = {
+                                            detail_name: {
+                                                "item_name": detail_result.item_name,
+                                                "is_included": detail_result.is_included,
+                                                "section_reference": detail_result.section_reference,
+                                                "full_text_part": detail_result.full_text_part,
+                                                "llm_summary": detail_result.llm_summary,
+                                                "description": detail_result.description,
+                                                "unit": detail_result.unit,
+                                                "value": detail_result.value
+                                            }
+                                        }
+
+                                        # Add to appropriate detail category
+                                        if detail_type == "limits":
+                                            benefit_item[benefit_name]["limits"].append(detail_item)
+                                        elif detail_type == "conditions":
+                                            benefit_item[benefit_name]["conditions"].append(detail_item)
+                                        elif detail_type == "exclusions":
+                                            benefit_item[benefit_name]["exclusions"].append(detail_item)
+
+                            segment_item[segment_name]["benefits"].append(benefit_item)
+
+                    tree_structure["segments"].append(segment_item)
+
+            return tree_structure
 
         except Exception as e:
             print(f"Error analyzing document {document_name}: {e}")
@@ -563,39 +622,19 @@ Always set item_name to: "{detail_info['name']}"
         document_name = Path(document_path).stem
         filename = f"{document_name}_analysis_results.json"
 
-        # Convert Pydantic models to dictionaries
-        serializable_results = {
-            'segments': {},
-            'benefits': {},
-            'details': {
-                'limits': {},
-                'conditions': {},
-                'exclusions': {}
-            },
-            'included_segments': results.get('included_segments', [])
-        }
-
-        # Process segment results
-        for segment_name, result in results.get('segments', {}).items():
-            if hasattr(result, 'dict'):  # Pydantic model
-                serializable_results['segments'][segment_name] = result.dict()
+        # Convert Pydantic models to dictionaries in the new hierarchical structure
+        def convert_pydantic_to_dict(obj):
+            """Recursively convert Pydantic models to dictionaries."""
+            if hasattr(obj, 'dict'):  # Pydantic model
+                return obj.dict()
+            elif isinstance(obj, dict):
+                return {k: convert_pydantic_to_dict(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_pydantic_to_dict(item) for item in obj]
             else:
-                serializable_results['segments'][segment_name] = result
+                return obj
 
-        # Process benefit results
-        for benefit_key, result in results.get('benefits', {}).items():
-            if hasattr(result, 'dict'):  # Pydantic model
-                serializable_results['benefits'][benefit_key] = result.dict()
-            else:
-                serializable_results['benefits'][benefit_key] = result
-
-        # Process detail results
-        for detail_type in ['limits', 'conditions', 'exclusions']:
-            for detail_key, result in results.get('details', {}).get(detail_type, {}).items():
-                if hasattr(result, 'dict'):  # Pydantic model
-                    serializable_results['details'][detail_type][detail_key] = result.dict()
-                else:
-                    serializable_results['details'][detail_type][detail_key] = result
+        serializable_results = convert_pydantic_to_dict(results)
 
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump({document_name: serializable_results}, f, indent=2, ensure_ascii=False)
@@ -611,82 +650,65 @@ Always set item_name to: "{detail_info['name']}"
         print(f"DETAILED RESULTS: {document_name.upper()}")
         print(f"{'='*60}")
 
-        # Print segment details
-        print(f"\n{'='*40}")
-        print("SEGMENTS")
-        print(f"{'='*40}")
-
-        for segment_name, result in results.get('segments', {}).items():
-            print(f"\n--- SEGMENT: {segment_name.upper()} ---")
-            if hasattr(result, 'is_included'):
-                print(f"Included: {'✓ YES' if result.is_included else '✗ NO'}")
-                print(f"Section Reference: {result.section_reference}")
-                print(f"Summary: {result.llm_summary}")
-                if result.is_included and result.full_text_part != "N/A":
-                    print(f"Full Text (first 300 chars): {result.full_text_part[:300]}...")
-            else:
-                print(f"Result: {result}")
-
-        # Print benefit details
-        benefit_results = results.get('benefits', {})
-        if benefit_results:
+        # Print segment details from new hierarchical structure
+        segments = results.get('segments', [])
+        if segments:
             print(f"\n{'='*40}")
-            print("BENEFITS")
+            print("SEGMENTS")
             print(f"{'='*40}")
 
-            for benefit_key, result in benefit_results.items():
-                segment_name = self.benefit_chains[benefit_key]['segment_name']
-                benefit_name = self.benefit_chains[benefit_key]['benefit_info']['name']
-                print(f"\n--- BENEFIT: {segment_name.upper()} → {benefit_name.upper()} ---")
-                if hasattr(result, 'is_included'):
-                    print(f"Included: {'✓ YES' if result.is_included else '✗ NO'}")
-                    print(f"Section Reference: {result.section_reference}")
-                    print(f"Summary: {result.llm_summary}")
-                    print(f"Description: {result.description}")
-                    print(f"Unit: {result.unit}")
-                    print(f"Value: {result.value}")
-                    if result.is_included and result.full_text_part != "N/A":
-                        print(f"Full Text (first 300 chars): {result.full_text_part[:300]}...")
-                else:
-                    print(f"Result: {result}")
+            for segment_item in segments:
+                for segment_name, segment_data in segment_item.items():
+                    print(f"\n--- SEGMENT: {segment_name.upper()} ---")
+                    print(f"Included: {'✓ YES' if segment_data.get('is_included', False) else '✗ NO'}")
+                    print(f"Section Reference: {segment_data.get('section_reference', 'N/A')}")
+                    print(f"Description: {segment_data.get('description', 'N/A')}")
+                    print(f"Summary: {segment_data.get('llm_summary', 'N/A')}")
+                    print(f"Unit: {segment_data.get('unit', 'N/A')}")
+                    print(f"Value: {segment_data.get('value', 'N/A')}")
+                    
+                    full_text = segment_data.get('full_text_part', 'N/A')
+                    if segment_data.get('is_included', False) and full_text != "N/A":
+                        print(f"Full Text (first 300 chars): {full_text[:300]}...")
+
+                    # Print benefits for this segment
+                    benefits = segment_data.get('benefits', [])
+                    if benefits:
+                        print(f"\n  BENEFITS FOR {segment_name.upper()}:")
+                        for benefit_item in benefits:
+                            for benefit_name, benefit_data in benefit_item.items():
+                                print(f"\n  --- BENEFIT: {benefit_name.upper()} ---")
+                                print(f"  Included: {'✓ YES' if benefit_data.get('is_included', False) else '✗ NO'}")
+                                print(f"  Section Reference: {benefit_data.get('section_reference', 'N/A')}")
+                                print(f"  Description: {benefit_data.get('description', 'N/A')}")
+                                print(f"  Summary: {benefit_data.get('llm_summary', 'N/A')}")
+                                print(f"  Unit: {benefit_data.get('unit', 'N/A')}")
+                                print(f"  Value: {benefit_data.get('value', 'N/A')}")
+                                
+                                full_text = benefit_data.get('full_text_part', 'N/A')
+                                if benefit_data.get('is_included', False) and full_text != "N/A":
+                                    print(f"  Full Text (first 300 chars): {full_text[:300]}...")
+
+                                # Print details for this benefit
+                                for detail_type in ['limits', 'conditions', 'exclusions']:
+                                    details = benefit_data.get(detail_type, [])
+                                    if details:
+                                        print(f"\n    {detail_type.upper()} FOR {benefit_name.upper()}:")
+                                        for detail_item in details:
+                                            for detail_name, detail_data in detail_item.items():
+                                                print(f"\n    --- {detail_type.upper()}: {detail_name.upper()} ---")
+                                                print(f"    Included: {'✓ YES' if detail_data.get('is_included', False) else '✗ NO'}")
+                                                print(f"    Section Reference: {detail_data.get('section_reference', 'N/A')}")
+                                                print(f"    Description: {detail_data.get('description', 'N/A')}")
+                                                print(f"    Summary: {detail_data.get('llm_summary', 'N/A')}")
+                                                print(f"    Unit: {detail_data.get('unit', 'N/A')}")
+                                                print(f"    Value: {detail_data.get('value', 'N/A')}")
+                                                
+                                                full_text = detail_data.get('full_text_part', 'N/A')
+                                                if detail_data.get('is_included', False) and full_text != "N/A":
+                                                    print(f"    Full Text (first 200 chars): {full_text[:200]}...")
         else:
-            print(f"\nNo benefits were analyzed (no segments were found in the document).")
-
-        # Print detail results (limits, conditions, exclusions)
-        detail_results = results.get('details', {})
-        has_details = any(detail_results.get(detail_type, {}) for detail_type in ['limits', 'conditions', 'exclusions'])
-
-        if has_details:
-            print(f"\n{'='*40}")
-            print("DETAILS (LIMITS, CONDITIONS, EXCLUSIONS)")
-            print(f"{'='*40}")
-
-            for detail_type in ['limits', 'conditions', 'exclusions']:
-                type_results = detail_results.get(detail_type, {})
-                if type_results:
-                    print(f"\n--- {detail_type.upper()} ---")
-                    for detail_key, result in type_results.items():
-                        if detail_key in self.detail_chains:
-                            detail_data = self.detail_chains[detail_key]
-                            segment_name = detail_data['segment_name']
-                            benefit_key = detail_data['benefit_key']
-                            benefit_name = self.benefit_chains[benefit_key]['benefit_info']['name']
-                            detail_name = detail_data['detail_info']['name']
-
-                            print(f"\n{segment_name.upper()} → {benefit_name.upper()} → {detail_name.upper()}")
-                            if hasattr(result, 'is_included'):
-                                print(f"  Included: {'✓ YES' if result.is_included else '✗ NO'}")
-                                print(f"  Section Reference: {result.section_reference}")
-                                print(f"  Summary: {result.llm_summary}")
-                                print(f"  Description: {result.description}")
-                                print(f"  Unit: {result.unit}")
-                                print(f"  Value: {result.value}")
-                                if result.is_included and result.full_text_part != "N/A":
-                                    print(f"  Full Text (first 200 chars): {result.full_text_part[:200]}...")
-                            else:
-                                print(f"  Result: {result}")
-        else:
-            print(f"\nNo details were analyzed (no benefits were found in the document).")
+            print(f"\nNo segments were found in the document.")
 
 
 async def main():
