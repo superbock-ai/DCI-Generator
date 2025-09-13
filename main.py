@@ -14,12 +14,150 @@ from langchain_core.runnables import RunnableParallel
 from langchain_core.globals import set_llm_cache
 from langchain_core.caches import InMemoryCache
 from pydantic import BaseModel, Field
+from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type
+from openai import RateLimitError
+import re
+import math
+import json
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Set up in-memory caching for LangChain
 set_llm_cache(InMemoryCache())
+
+
+def parse_openai_wait_time(error_message: str):
+    """
+    Parse the wait time from OpenAI's rate limit error message.
+
+    Args:
+        error_message: The error message from OpenAI API
+
+    Returns:
+        Wait time in seconds, ceiled to next full second. Returns None if parsing fails.
+    """
+    # Patterns to match OpenAI's rate limit messages
+    patterns = [
+        r"try again in (\d+\.?\d*)\s*s",
+        r"try again in (\d+\.?\d*)\s*seconds",
+        r"Please try again in (\d+\.?\d*)\s*s",
+        r"Please try again in (\d+\.?\d*)\s*seconds",
+        r"reset in (\d+\.?\d*)\s*s",
+        r"reset in (\d+\.?\d*)\s*seconds"
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, error_message, re.IGNORECASE)
+        if match:
+            wait_time = float(match.group(1))
+            # Always ceil to next full second as requested
+            ceiled_time = math.ceil(wait_time)
+            print(f"    Parsed wait time: {wait_time}s → using {ceiled_time}s (ceiled)")
+            return ceiled_time
+
+    return None
+
+
+def create_smart_wait_strategy():
+    """
+    Create a wait strategy that tries to parse OpenAI's suggested wait time,
+    falling back to exponential backoff if parsing fails.
+    """
+    def smart_wait(retry_state):
+        # Try to parse the wait time from the exception
+        if retry_state.outcome and retry_state.outcome.exception():
+            exception = retry_state.outcome.exception()
+            error_message = str(exception)
+
+            # Try to parse OpenAI's suggested wait time
+            parsed_wait = parse_openai_wait_time(error_message)
+            if parsed_wait is not None:
+                return parsed_wait
+
+        # Fallback to exponential backoff with random jitter
+        exponential_wait = wait_random_exponential(multiplier=1, max=60)
+        fallback_time = exponential_wait(retry_state)
+        print(f"    Using fallback exponential backoff: {fallback_time:.1f}s")
+        return fallback_time
+
+    return smart_wait
+
+
+def get_debug_filename(document_name: str, tier: str) -> str:
+    """Get debug filename for a specific document and analysis tier."""
+    return f"{document_name}_{tier}.debug.json"
+
+
+def save_debug_results(document_name: str, tier: str, results: dict, chunk_sizes: dict):
+    """Save analysis results to debug file with chunk size metadata."""
+    filename = get_debug_filename(document_name, tier)
+
+    debug_data = {
+        "tier": tier,
+        "chunk_sizes": chunk_sizes,
+        "results": {}
+    }
+
+    # Convert Pydantic models to dictionaries
+    for key, result in results.items():
+        if hasattr(result, 'dict'):  # Pydantic model
+            debug_data["results"][key] = result.dict()
+        else:
+            debug_data["results"][key] = result
+
+    with open(filename, 'w', encoding='utf-8') as f:
+        json.dump(debug_data, f, indent=2, ensure_ascii=False)
+
+    print(f"🐛 Saved {tier} debug file: {filename}")
+
+
+def load_debug_results(document_name: str, tier: str):
+    """
+    Load analysis results from debug file.
+    Returns (results_dict, is_valid) tuple.
+    """
+    filename = get_debug_filename(document_name, tier)
+
+    if not os.path.exists(filename):
+        return None, False
+
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            debug_data = json.load(f)
+
+        # Convert back to AnalysisResult objects
+        results = {}
+        for key, result_dict in debug_data["results"].items():
+            results[key] = AnalysisResult(**result_dict)
+
+        print(f"🔄 Loaded {tier} debug file: {filename} ({len(results)} items)")
+        return results, True
+
+    except Exception as e:
+        print(f"❌ Error loading debug file {filename}: {e}")
+        return None, False
+
+
+def clean_debug_files(document_name: str, from_tier = None):
+    """Clean debug files, optionally from a specific tier onwards."""
+    tiers = ["segments", "benefits", "details"]
+
+    if from_tier:
+        # Find starting index
+        try:
+            start_idx = tiers.index(from_tier)
+            tiers_to_clean = tiers[start_idx:]
+        except ValueError:
+            tiers_to_clean = tiers
+    else:
+        tiers_to_clean = tiers
+
+    for tier in tiers_to_clean:
+        filename = get_debug_filename(document_name, tier)
+        if os.path.exists(filename):
+            os.remove(filename)
+            print(f"🗑️  Deleted debug file: {filename}")
 
 
 class AnalysisResult(BaseModel):
@@ -37,7 +175,26 @@ class AnalysisResult(BaseModel):
 class DocumentAnalyzer:
     """Analyzes insurance documents for segment taxonomy items using GraphQL and OpenAI."""
 
-    def __init__(self):
+    def __init__(self,
+                 segment_chunk_size: int = 8,
+                 benefit_chunk_size: int = 8,
+                 detail_chunk_size: int = 3,
+                 debug_mode: bool = False):
+        """
+        Initialize DocumentAnalyzer with configurable chunk sizes for each analysis tier.
+
+        Args:
+            segment_chunk_size: Number of segments to process in parallel per chunk (default: 8).
+            benefit_chunk_size: Number of benefits to process in parallel per chunk (default: 8).
+            detail_chunk_size: Number of details to process in parallel per chunk (default: 3).
+                              Smaller default for details due to token-heavy responses.
+            debug_mode: Enable debug mode for saving/loading intermediate results.
+        """
+        self.segment_chunk_size = segment_chunk_size
+        self.benefit_chunk_size = benefit_chunk_size
+        self.detail_chunk_size = detail_chunk_size
+        self.debug_mode = debug_mode
+        
         self.base_system_prompt = """You are an expert for analysing insurance documents.
                         Your job is to extract relevant information from the document in a structured json format.
                         You will receive a markdown version of the insurance document and analyse the document for the following information:"""
@@ -59,6 +216,7 @@ class DocumentAnalyzer:
         self.graphql_client = Client(transport=transport, fetch_schema_from_transport=True)
 
         # Initialize OpenAI model with structured output
+        # Retry logic handled by decorators on the methods that make API calls
         self.llm = ChatOpenAI(
             model=openai_model,
             temperature=0,
@@ -68,7 +226,7 @@ class DocumentAnalyzer:
         self.segment_chains = {}
         self.benefits = {}  # Dict[segment_name, List[benefit_dict]]
         self.benefit_chains = {}
-        self.details = {  # Dict[benefit_key, Dict[detail_type, List[detail_dict]]]
+        self.details = {  # Dict[benefit_key, Dict[detail_type, List[detail_dict]]
             'limits': {},
             'conditions': {},
             'exclusions': {}
@@ -358,31 +516,59 @@ Always set item_name to: "{detail_info['name']}"
                     }
 
     async def analyze_benefits(self, document_text: str) -> Dict[str, AnalysisResult]:
-        """Analyze all benefits for included segments in parallel."""
+        """Analyze all benefits for included segments in chunked parallel processing."""
 
         if not self.benefit_chains:
             return {}
 
-        print(f"Analyzing {len(self.benefit_chains)} benefits in parallel...")
+        print(f"Analyzing {len(self.benefit_chains)} benefits in chunks of {self.benefit_chunk_size}...")
 
-        # Create parallel runnables for each benefit
-        benefit_runnables = {}
-        for benefit_key, benefit_data in self.benefit_chains.items():
-            benefit_runnables[benefit_key] = benefit_data['chain']
+        # Convert benefit_chains to list for chunking
+        benefit_items = list(self.benefit_chains.items())
+        all_results = {}
 
-        # Create RunnableParallel for all benefits
+        # Process benefits in chunks
+        for i in range(0, len(benefit_items), self.benefit_chunk_size):
+            chunk = benefit_items[i:i + self.benefit_chunk_size]
+            chunk_number = (i // self.benefit_chunk_size) + 1
+            total_chunks = (len(benefit_items) + self.benefit_chunk_size - 1) // self.benefit_chunk_size
+            
+            print(f"  Processing chunk {chunk_number}/{total_chunks} ({len(chunk)} benefits)...")
+
+            # Create parallel runnables for this chunk
+            benefit_runnables = {}
+            for benefit_key, benefit_data in chunk:
+                benefit_runnables[benefit_key] = benefit_data['chain']
+
+            # Process this chunk with retry
+            chunk_results = await self._process_benefit_chunk(benefit_runnables, document_text)
+            
+            # Merge results
+            all_results.update(chunk_results)
+            
+            print(f"  ✅ Completed chunk {chunk_number}/{total_chunks}")
+
+        return all_results
+
+    @retry(
+        stop=stop_after_attempt(6),
+        wait=create_smart_wait_strategy(),
+        retry=retry_if_exception_type((RateLimitError, Exception)),
+        before_sleep=lambda retry_state: print(f"    Rate limit hit on chunk, retrying... (attempt {retry_state.attempt_number}/6)")
+    )
+    async def _process_benefit_chunk(self, benefit_runnables: Dict, document_text: str) -> Dict[str, AnalysisResult]:
+        """Process a single chunk of benefits with retry logic."""
+        # Create RunnableParallel for this chunk
         parallel_analysis = RunnableParallel(benefit_runnables)
-
-        # Prepare input data
         input_data = {"document_text": document_text}
 
         try:
-            # Execute parallel analysis for all benefits
+            # Execute parallel analysis for this chunk
             results = await parallel_analysis.ainvoke(input_data)
             return results
-
         except Exception as e:
-            print(f"Error analyzing benefits: {e}")
+            print(f"    Error analyzing benefit chunk: {e}")
+            # Re-raise to trigger retry mechanism
             raise e
 
     def setup_detail_chains(self, benefit_results: Dict[str, AnalysisResult], segment_results: Dict[str, AnalysisResult]):
@@ -413,35 +599,116 @@ Always set item_name to: "{detail_info['name']}"
                         }
 
     async def analyze_details(self, document_text: str) -> Dict[str, AnalysisResult]:
-        """Analyze all details (limits/conditions/exclusions) for included benefits in parallel."""
+        """Analyze all details (limits/conditions/exclusions) for included benefits in chunked parallel processing."""
 
         if not self.detail_chains:
             return {}
 
-        print(f"Analyzing {len(self.detail_chains)} details (limits/conditions/exclusions) in parallel...")
+        print(f"Analyzing {len(self.detail_chains)} details in chunks of {self.detail_chunk_size}...")
 
-        # Create parallel runnables for each detail
-        detail_runnables = {}
-        for detail_key, detail_data in self.detail_chains.items():
-            detail_runnables[detail_key] = detail_data['chain']
+        # Convert detail_chains to list for chunking
+        detail_items = list(self.detail_chains.items())
+        all_results = {}
 
-        # Create RunnableParallel for all details
+        # Process details in chunks
+        for i in range(0, len(detail_items), self.detail_chunk_size):
+            chunk = detail_items[i:i + self.detail_chunk_size]
+            chunk_number = (i // self.detail_chunk_size) + 1
+            total_chunks = (len(detail_items) + self.detail_chunk_size - 1) // self.detail_chunk_size
+            
+            print(f"  Processing chunk {chunk_number}/{total_chunks} ({len(chunk)} details)...")
+
+            # Create parallel runnables for this chunk
+            detail_runnables = {}
+            for detail_key, detail_data in chunk:
+                detail_runnables[detail_key] = detail_data['chain']
+
+            # Process this chunk with retry
+            chunk_results = await self._process_detail_chunk(detail_runnables, document_text)
+            
+            # Merge results
+            all_results.update(chunk_results)
+            
+            print(f"  ✅ Completed chunk {chunk_number}/{total_chunks}")
+
+        return all_results
+
+    @retry(
+        stop=stop_after_attempt(6),
+        wait=create_smart_wait_strategy(),
+        retry=retry_if_exception_type((RateLimitError, Exception)),
+        before_sleep=lambda retry_state: print(f"    Rate limit hit on chunk, retrying... (attempt {retry_state.attempt_number}/6)")
+    )
+    async def _process_detail_chunk(self, detail_runnables: Dict, document_text: str) -> Dict[str, AnalysisResult]:
+        """Process a single chunk of details with retry logic."""
+        # Create RunnableParallel for this chunk
         parallel_analysis = RunnableParallel(detail_runnables)
-
-        # Prepare input data
         input_data = {"document_text": document_text}
 
         try:
-            # Execute parallel analysis for all details
+            # Execute parallel analysis for this chunk
             results = await parallel_analysis.ainvoke(input_data)
             return results
-
         except Exception as e:
-            print(f"Error analyzing details: {e}")
+            print(f"    Error analyzing detail chunk: {e}")
+            # Re-raise to trigger retry mechanism
+            raise e
+
+    async def _analyze_segments_parallel(self, document_text: str) -> Dict[str, AnalysisResult]:
+        """Execute parallel segment analysis with chunked processing and retry logic."""
+        segment_items = list(self.segment_chains.items())
+        
+        # If segments are few, process all at once
+        if len(segment_items) <= self.segment_chunk_size:
+            print(f"Analyzing {len(segment_items)} segments in a single batch...")
+            return await self._process_segment_chunk(dict(segment_items), document_text)
+
+        # Otherwise, process in chunks
+        print(f"Analyzing {len(segment_items)} segments in chunks of {self.segment_chunk_size}...")
+        all_results = {}
+
+        for i in range(0, len(segment_items), self.segment_chunk_size):
+            chunk = segment_items[i:i + self.segment_chunk_size]
+            chunk_number = (i // self.segment_chunk_size) + 1
+            total_chunks = (len(segment_items) + self.segment_chunk_size - 1) // self.segment_chunk_size
+            
+            print(f"  Processing chunk {chunk_number}/{total_chunks} ({len(chunk)} segments)...")
+
+            # Create parallel runnables for this chunk
+            segment_runnables = dict(chunk)
+
+            # Process this chunk with retry
+            chunk_results = await self._process_segment_chunk(segment_runnables, document_text)
+            
+            # Merge results
+            all_results.update(chunk_results)
+            
+            print(f"  ✅ Completed chunk {chunk_number}/{total_chunks}")
+
+        return all_results
+
+    @retry(
+        stop=stop_after_attempt(6),
+        wait=create_smart_wait_strategy(),
+        retry=retry_if_exception_type((RateLimitError, Exception)),
+        before_sleep=lambda retry_state: print(f"    Rate limit hit on chunk, retrying... (attempt {retry_state.attempt_number}/6)")
+    )
+    async def _process_segment_chunk(self, segment_runnables: Dict, document_text: str) -> Dict[str, AnalysisResult]:
+        """Process a single chunk of segments with retry logic."""
+        parallel_segment_analysis = RunnableParallel(segment_runnables)
+        input_data = {"document_text": document_text}
+
+        try:
+            # Execute parallel analysis for this chunk
+            results = await parallel_segment_analysis.ainvoke(input_data)
+            return results
+        except Exception as e:
+            print(f"    Error analyzing segment chunk: {e}")
+            # Re-raise to trigger retry mechanism
             raise e
 
     async def analyze_document(self, document_path: str) -> Dict:
-        """Analyze a single document for all segments and benefits in parallel."""
+        """Analyze a single document for all segments and benefits in parallel with debug support."""
 
         # Load the document
         if not os.path.exists(document_path):
@@ -452,22 +719,29 @@ Always set item_name to: "{detail_info['name']}"
 
         document_name = Path(document_path).stem
 
-        print(f"=== Analyzing document: {document_name} ===")
+        print(f"=== Analyzing document: {document_name} ===" + (" (Debug Mode)" if self.debug_mode else ""))
         print(f"Document length: {len(document_text)} characters")
-        print(f"Analyzing {len(self.segments)} segments in parallel...")
-        print("Note: Results may be served from cache for faster response")
+        print(f"Using chunk sizes: {self.segment_chunk_size} segments, {self.benefit_chunk_size} benefits, {self.detail_chunk_size} details per batch")
 
-        # Step 1: Analyze segments
-        segment_runnables = {}
-        for segment_name, chain in self.segment_chains.items():
-            segment_runnables[segment_name] = chain
-
-        parallel_segment_analysis = RunnableParallel(segment_runnables)
-        input_data = {"document_text": document_text}
+        # Prepare chunk size metadata for debug files
+        chunk_sizes = {
+            "segments": self.segment_chunk_size,
+            "benefits": self.benefit_chunk_size,
+            "details": self.detail_chunk_size
+        }
 
         try:
-            # Execute parallel analysis for all segments
-            segment_results = await parallel_segment_analysis.ainvoke(input_data)
+            # Step 1: Analyze segments with debug support
+            segment_results = None
+            if self.debug_mode:
+                segment_results, is_valid = load_debug_results(document_name, "segments")
+
+            if segment_results is None:
+                print(f"🚀 Running segment analysis ({len(self.segments)} segments)...")
+                segment_results = await self._analyze_segments_parallel(document_text)
+                
+                if self.debug_mode:
+                    save_debug_results(document_name, "segments", segment_results, chunk_sizes)
 
             # Print segment summary
             print(f"\n=== Segment Results Summary for {document_name} ===")
@@ -486,9 +760,17 @@ Always set item_name to: "{detail_info['name']}"
                 # Setup benefit chains for included segments
                 self.setup_benefit_chains(segment_results)
 
-                # Analyze benefits
+                # Analyze benefits with debug support
                 if self.benefit_chains:
-                    benefit_results = await self.analyze_benefits(document_text)
+                    if self.debug_mode:
+                        benefit_results, is_valid = load_debug_results(document_name, "benefits")
+
+                    if benefit_results is None or not benefit_results:
+                        print(f"🚀 Running benefit analysis ({len(self.benefit_chains)} benefits)...")
+                        benefit_results = await self.analyze_benefits(document_text)
+                        
+                        if self.debug_mode:
+                            save_debug_results(document_name, "benefits", benefit_results, chunk_sizes)
 
                     # Print benefit summary
                     print(f"\n=== Benefit Results Summary for {document_name} ===")
@@ -509,9 +791,17 @@ Always set item_name to: "{detail_info['name']}"
                         # Setup detail chains for included benefits
                         self.setup_detail_chains(benefit_results, segment_results)
 
-                        # Analyze details
+                        # Analyze details with debug support
                         if self.detail_chains:
-                            detail_results = await self.analyze_details(document_text)
+                            if self.debug_mode:
+                                detail_results, is_valid = load_debug_results(document_name, "details")
+
+                            if detail_results is None or not detail_results:
+                                print(f"🚀 Running detail analysis ({len(self.detail_chains)} details)...")
+                                detail_results = await self.analyze_details(document_text)
+                                
+                                if self.debug_mode:
+                                    save_debug_results(document_name, "details", detail_results, chunk_sizes)
 
                             # Print detail summary
                             print(f"\n=== Detail Results Summary for {document_name} ===")
@@ -533,7 +823,7 @@ Always set item_name to: "{detail_info['name']}"
             else:
                 print("No segments found. Skipping benefit and detail analysis.")
 
-            # Step 4: Build hierarchical tree structure
+            # Step 4: Build hierarchical tree structure (unchanged)
             tree_structure = {"segments": []}
 
             # Process each segment
@@ -719,6 +1009,19 @@ async def main():
     parser.add_argument("--export", "-e", action="store_true", help="Export results to JSON file")
     parser.add_argument("--detailed", "-d", action="store_true", help="Show detailed results")
     parser.add_argument("--no-cache", action="store_true", help="Disable caching for this run")
+    parser.add_argument("--segment-chunks", type=int, default=8,
+                       help="Number of segments to process in parallel per chunk (default: 8)")
+    parser.add_argument("--benefit-chunks", type=int, default=8,
+                       help="Number of benefits to process in parallel per chunk (default: 8)")
+    parser.add_argument("--detail-chunks", type=int, default=3,
+                       help="Number of details to process in parallel per chunk (default: 3). "
+                            "Smaller default due to token-heavy responses.")
+    parser.add_argument("--debug", action="store_true",
+                       help="Enable debug mode: save intermediate results and auto-resume from existing debug files")
+    parser.add_argument("--debug-clean", action="store_true",
+                       help="Delete existing debug files before running (forces full re-run)")
+    parser.add_argument("--debug-from", choices=["segments", "benefits", "details"],
+                       help="Force re-run from specific tier (deletes subsequent debug files)")
 
     args = parser.parse_args()
 
@@ -739,8 +1042,24 @@ async def main():
         return 1
 
     try:
-        # Initialize analyzer
-        analyzer = DocumentAnalyzer()
+        # Handle debug flags
+        document_name = Path(args.document_path).stem
+
+        if args.debug_clean:
+            print("🗑️  Cleaning all debug files...")
+            clean_debug_files(document_name)
+
+        if args.debug_from:
+            print(f"🔄 Cleaning debug files from {args.debug_from} onwards...")
+            clean_debug_files(document_name, args.debug_from)
+
+        # Initialize analyzer with configurable chunk sizes for each tier
+        analyzer = DocumentAnalyzer(
+            segment_chunk_size=args.segment_chunks,
+            benefit_chunk_size=args.benefit_chunks,
+            detail_chunk_size=args.detail_chunks,
+            debug_mode=args.debug
+        )
 
         # Fetch taxonomy segments, benefits, and details from GraphQL
         print("Fetching segment taxonomy from GraphQL endpoint...")

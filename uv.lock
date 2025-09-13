@@ -106,6 +106,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "requests" },
     { name = "requests-toolbelt" },
+    { name = "tenacity" },
 ]
 
 [package.metadata]
@@ -117,6 +118,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "requests-toolbelt", specifier = ">=1.0.0" },
+    { name = "tenacity", specifier = ">=9.1.2" },
 ]
 
 [[package]]

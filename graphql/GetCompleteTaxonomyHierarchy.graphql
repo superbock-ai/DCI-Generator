@@ -21,7 +21,6 @@ query GetCompleteTaxonomyHierarchy($dcm_id: ID!) {
           category: { _eq: "segment_type" }
         }
       }
-      limit: 1
     ) {
       id
       related_taxonomy_item {
@@ -41,7 +40,6 @@ query GetCompleteTaxonomyHierarchy($dcm_id: ID!) {
               category: { _eq: "benefit_type" }
             }
           }
-          limit: 2
         ) {
           id
           related_taxonomy_item {

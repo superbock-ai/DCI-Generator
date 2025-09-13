@@ -25,7 +25,11 @@ The DCI (Domain Context Item) Generator performs intelligent, context-aware anal
 - **German insurance expertise** - Specialized prompts for German AVB documents
 - **Flexible export options** - JSON export and detailed console output
 - **Environment-based configuration** - Secure credential management
-- **Error handling** - Robust processing with clear error messages
+- **Chunked parallel processing** - Configurable chunk sizes per analysis tier
+- **Smart rate limiting** - Automatic retry with OpenAI wait time parsing
+- **Debug mode with auto-resume** - Save progress and resume from failures
+- **Token-aware processing** - Handles OpenAI response length limits
+- **Robust error handling** - Retry logic and graceful failure recovery
 
 ## ⚙️ Requirements
 
@@ -76,6 +80,36 @@ uv run main.py travel-insurance/markdown/axa.md --no-cache
 
 # All options combined
 uv run main.py travel-insurance/markdown/axa.md --export --detailed --no-cache
+```
+
+### Chunk Size Configuration
+```bash
+# Default chunk sizes (8 segments, 8 benefits, 3 details)
+uv run main.py document.md
+
+# Conservative for reliability
+uv run main.py document.md --segment-chunks 5 --benefit-chunks 4 --detail-chunks 2
+
+# Aggressive for speed
+uv run main.py document.md --segment-chunks 15 --benefit-chunks 12 --detail-chunks 5
+
+# Token-safe for large responses
+uv run main.py document.md --detail-chunks 1
+```
+
+### Debug Mode & Auto-Resume
+```bash
+# Enable debug mode (saves intermediate results)
+uv run main.py document.md --debug
+
+# Clean all debug files and start fresh
+uv run main.py document.md --debug --debug-clean
+
+# Force re-run from specific tier onwards
+uv run main.py document.md --debug --debug-from benefits
+
+# Ideal for token limit issues - resume with smaller chunks
+uv run main.py document.md --debug --detail-chunks 1
 ```
 
 ### Available Documents
@@ -215,6 +249,28 @@ class AnalysisResult(BaseModel):
 | `--export` | `-e` | Export results to JSON file |
 | `--detailed` | `-d` | Show comprehensive analysis details |
 | `--no-cache` | - | Disable caching for fresh results |
+| `--segment-chunks` | - | Segments per parallel chunk (default: 8) |
+| `--benefit-chunks` | - | Benefits per parallel chunk (default: 8) |
+| `--detail-chunks` | - | Details per parallel chunk (default: 3) |
+| `--debug` | - | Enable debug mode with auto-resume |
+| `--debug-clean` | - | Delete all debug files before running |
+| `--debug-from` | - | Force re-run from specific tier (segments/benefits/details) |
+
+### Rate Limiting & Reliability
+- **Chunked Processing**: Processes items in configurable batches to avoid API limits
+- **Smart Wait Time Parsing**: Extracts exact wait times from OpenAI error messages
+- **Exponential Backoff Fallback**: Falls back to exponential backoff if parsing fails
+- **6 Retry Attempts**: Industry standard retry count with detailed logging
+- **Chunk-Level Retries**: Only retries failed chunks, not entire batches
+- **Guaranteed Completion**: Script completes successfully even with rate limit hits
+
+### Debug Mode & Auto-Resume
+- **Automatic Save**: Saves intermediate results after each successful analysis tier
+- **Smart Resume**: Automatically loads existing debug files and resumes from last incomplete tier
+- **Flexible Resumption**: Uses existing debug files regardless of chunk size changes between runs
+- **Per-Document Files**: `document_segments.debug.json`, `document_benefits.debug.json`, `document_details.debug.json`
+- **Progress Visibility**: Clear logging shows what's loaded vs. what's running
+- **Failure Recovery**: Resume from failures with different configurations (e.g., smaller chunk sizes)
 
 ## 📁 Project Structure
 

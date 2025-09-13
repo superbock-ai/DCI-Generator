@@ -13,7 +13,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **With JSON export**: `uv run main.py travel-insurance/markdown/axa.md --export`
 - **With detailed results**: `uv run main.py travel-insurance/markdown/axa.md --detailed`
 - **Disable caching**: `uv run main.py travel-insurance/markdown/axa.md --no-cache`
-- **All options**: `uv run main.py travel-insurance/markdown/axa.md -e -d`
+- **Custom chunk sizes**: `uv run main.py travel-insurance/markdown/axa.md --segment-chunks 8 --benefit-chunks 6 --detail-chunks 3`
+- **Debug mode**: `uv run main.py travel-insurance/markdown/axa.md --debug`
+- **Resume from failure**: `uv run main.py travel-insurance/markdown/axa.md --debug --detail-chunks 1`
+- **All options**: `uv run main.py travel-insurance/markdown/axa.md -e -d --debug`
 
 ### Development Environment
 - **Interactive development**: Use `dev.ipynb` Jupyter notebook for experimentation and testing
@@ -107,6 +110,45 @@ DETAILS (Tier 3): Identify limits, conditions, exclusions for found benefits
 - `python-dotenv`: Environment variable management
 - `pydantic`: Data validation and structured output
 - `requests`: HTTP library for API communications
+- `tenacity`: Retry logic with exponential backoff for rate limiting
+
+### Rate Limiting & Error Handling
+- **Chunked Parallel Processing**: Processes items in configurable chunks (default: 8 per chunk) to avoid overwhelming OpenAI API
+- **Smart Retry Logic**: Uses `tenacity` library with intelligent wait time parsing
+- **OpenAI Wait Time Parsing**: Extracts exact wait times from OpenAI error messages (e.g., "Please try again in 7.453s" → waits 8s ceiled)
+- **Exponential Backoff Fallback**: Falls back to exponential backoff if wait time parsing fails
+- **Chunk-Level Retries**: Only retries failed chunks, not entire batches (prevents restarting all 53+ items)
+- **Configurable Chunk Size**: `--chunk-size` parameter allows tuning (3=conservative, 8=default, 15=aggressive)
+- **6 Retry Attempts**: Industry standard retry count with detailed logging
+- **Guaranteed Completion**: Script completes successfully even with rate limit hits
+
+#### Rate Limiting Configuration
+```bash
+# Conservative (most reliable, slower)
+uv run main.py document.md --chunk-size 3
+
+# Default (balanced)
+uv run main.py document.md --chunk-size 8
+
+# Aggressive (faster, more rate limit risk)
+uv run main.py document.md --chunk-size 15
+```
+
+#### Rate Limiting Implementation Details
+- **Three-tier chunking**: Segments, Benefits, and Details all use chunked processing
+- **Smart wait parsing**: `parse_openai_wait_time()` function extracts wait times from error messages
+- **Ceiling logic**: Always rounds up to next full second for safety
+- **Fallback strategy**: `create_smart_wait_strategy()` combines parsed and exponential backoff approaches
+- **Error message patterns**: Handles various OpenAI error message formats
+- **Progress logging**: Clear visibility into chunk processing and retry attempts
+
+### Debug Mode & Auto-Resume
+- **Automatic Save**: Saves intermediate results after each successful analysis tier
+- **Smart Resume**: Automatically loads existing debug files and resumes from last incomplete tier
+- **Flexible Resumption**: Uses existing debug files regardless of chunk size changes between runs
+- **Per-Document Files**: `document_segments.debug.json`, `document_benefits.debug.json`, `document_details.debug.json`
+- **Progress Visibility**: Clear logging shows what's loaded vs. what's running
+- **Failure Recovery**: Resume from failures with different configurations (e.g., smaller chunk sizes)
 
 ### Caching
 - **Comprehensive in-memory caching**: LangChain automatic caching across all three analysis tiers
