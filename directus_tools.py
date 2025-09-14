@@ -600,7 +600,7 @@ class DirectusSeeder:
             auth_token: Authentication token
             taxonomy_data: Optional pre-fetched taxonomy data to avoid duplicate GraphQL calls
         """
-        print(f"Starting to seed Generali analysis results {'(DRY RUN)' if self.dry_run else ''}")
+        print(f"Starting to seed {product_id} analysis results {'(DRY RUN)' if self.dry_run else ''}")
         print("=" * 60)
 
         # Get DCM ID from existing product and fetch/set taxonomy mappings
