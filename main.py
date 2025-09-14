@@ -20,7 +20,7 @@ import re
 import math
 
 # Import Directus seeding functionality
-from directus_tools import DirectusClient, DirectusConfig, DirectusSeeder
+from directus_tools import DirectusClient, DirectusConfig, DirectusSeeder, UnifiedTaxonomyFetcher
 
 # Load environment variables from .env file
 load_dotenv()
@@ -69,7 +69,7 @@ def cleanup_seeded_data(product_id: str) -> bool:
         print(f"Error during cleanup: {e}")
         return False
 
-def seed_to_directus(analysis_results: Dict[str, Any], product_id: str, dry_run: bool = False) -> bool:
+def seed_to_directus(analysis_results: Dict[str, Any], product_id: str, dry_run: bool = False, taxonomy_data=None) -> bool:
     """
     Seed analysis results to Directus under an existing dcm_product.
     
@@ -77,6 +77,7 @@ def seed_to_directus(analysis_results: Dict[str, Any], product_id: str, dry_run:
         analysis_results: The analysis results dictionary from main.py
         product_id: Existing dcm_product ID to seed data under
         dry_run: If True, only show what would be inserted without actual insertion
+        taxonomy_data: Optional pre-fetched taxonomy data to avoid duplicate GraphQL calls
     
     Returns:
         bool: True if seeding was successful, False otherwise
@@ -96,7 +97,7 @@ def seed_to_directus(analysis_results: Dict[str, Any], product_id: str, dry_run:
     graphql_url = directus_url + '/graphql'
 
     try:
-        seeder.seed_analysis_results(analysis_results, product_id, graphql_url, auth_token)
+        seeder.seed_analysis_results(analysis_results, product_id, graphql_url, auth_token, taxonomy_data)
         return True
     except Exception as e:
         print(f"Error during seeding: {e}")
@@ -286,13 +287,17 @@ class DocumentAnalyzer:
         if not directus_token:
             raise ValueError("DIRECTUS_AUTH_TOKEN environment variable is required")
 
-        # Initialize GraphQL client
+        # Initialize GraphQL client for legacy compatibility (if needed)
         transport = RequestsHTTPTransport(
             url=graphql_url,
             headers={"Authorization": f"Bearer {directus_token}"},
             use_json=True
         )
         self.graphql_client = Client(transport=transport, fetch_schema_from_transport=True)
+
+        # Initialize the unified taxonomy fetcher
+        self.taxonomy_fetcher = UnifiedTaxonomyFetcher(graphql_url, directus_token)
+        self.taxonomy_data = None
 
         # Initialize OpenAI model with structured output
         # Retry logic handled by decorators on the methods that make API calls
@@ -313,121 +318,17 @@ class DocumentAnalyzer:
         self.detail_chains = {}
 
     async def fetch_taxonomy_segments(self) -> List[Dict]:
-        """Fetch segment taxonomy items and their benefits from GraphQL endpoint."""
-
-        # Read the GraphQL query
-        with open("graphql/GetCompleteTaxonomyHierarchy.graphql") as f:
-            query = f.read()
-
-        # Variables for the query - use the dcm_id from initialization
-        variables = {"dcm_id": self.dcm_id}
-
-        # Execute the query
-        result = self.graphql_client.execute(gql(query), variable_values=variables)
-
-        # Extract segment_type items and their benefits from the response
-        segments = []
-        for item in result['taxonomy_items']:
-            if item['category'] == 'product_type':
-                for parent_rel in item['parent_relationships']:
-                    segment_item = parent_rel['related_taxonomy_item']
-                    if segment_item['category'] == 'segment_type':
-                        segment_name = segment_item['taxonomy_item_name']
-
-                        # Extract segment info
-                        segment_data = {
-                            'id': segment_item['id'],
-                            'name': segment_name,
-                            'description': segment_item['description'],
-                            'aliases': segment_item['aliases'],
-                            'examples': segment_item['examples'],
-                            'llm_instruction': segment_item['llm_instruction']
-                        }
-                        segments.append(segment_data)
-
-                        # Extract benefits for this segment
-                        benefits = []
-                        for benefit_rel in segment_item.get('parent_relationships', []):
-                            benefit_item = benefit_rel['related_taxonomy_item']
-                            if benefit_item['category'] == 'benefit_type':
-                                benefit_data = {
-                                    'id': benefit_item['id'],
-                                    'name': benefit_item['taxonomy_item_name'],
-                                    'description': benefit_item['description'],
-                                    'aliases': benefit_item['aliases'],
-                                    'examples': benefit_item['examples'],
-                                    'llm_instruction': benefit_item['llm_instruction'],
-                                    'segment_name': segment_name,
-                                    'unit': benefit_item.get('unit'),
-                                    'data_type': benefit_item.get('data_type')
-                                }
-                                benefits.append(benefit_data)
-
-                                # Extract limits, conditions, and exclusions for this benefit
-                                benefit_key = f"{segment_name}_{benefit_item['taxonomy_item_name']}"
-
-                                # Extract limits
-                                limits = []
-                                for limit_rel in benefit_item.get('benefit_limits', []):
-                                    limit_item = limit_rel['related_taxonomy_item']
-                                    limits.append({
-                                        'id': limit_item['id'],
-                                        'name': limit_item['taxonomy_item_name'],
-                                        'description': limit_item['description'],
-                                        'aliases': limit_item['aliases'],
-                                        'examples': limit_item['examples'],
-                                        'llm_instruction': limit_item.get('llm_instruction', ''),
-                                        'unit': limit_item.get('unit'),
-                                        'data_type': limit_item.get('data_type'),
-                                        'benefit_name': benefit_item['taxonomy_item_name'],
-                                        'segment_name': segment_name,
-                                        'detail_type': 'limit'
-                                    })
-
-                                # Extract conditions
-                                conditions = []
-                                for condition_rel in benefit_item.get('benefit_conditions', []):
-                                    condition_item = condition_rel['related_taxonomy_item']
-                                    conditions.append({
-                                        'id': condition_item['id'],
-                                        'name': condition_item['taxonomy_item_name'],
-                                        'description': condition_item['description'],
-                                        'aliases': condition_item['aliases'],
-                                        'examples': condition_item['examples'],
-                                        'llm_instruction': condition_item.get('llm_instruction', ''),
-                                        'unit': condition_item.get('unit'),
-                                        'data_type': condition_item.get('data_type'),
-                                        'benefit_name': benefit_item['taxonomy_item_name'],
-                                        'segment_name': segment_name,
-                                        'detail_type': 'condition'
-                                    })
-
-                                # Extract exclusions
-                                exclusions = []
-                                for exclusion_rel in benefit_item.get('benefit_exclusions', []):
-                                    exclusion_item = exclusion_rel['related_taxonomy_item']
-                                    exclusions.append({
-                                        'id': exclusion_item['id'],
-                                        'name': exclusion_item['taxonomy_item_name'],
-                                        'description': exclusion_item['description'],
-                                        'aliases': exclusion_item['aliases'],
-                                        'examples': exclusion_item['examples'],
-                                        'llm_instruction': exclusion_item.get('llm_instruction', ''),
-                                        'unit': exclusion_item.get('unit'),
-                                        'data_type': exclusion_item.get('data_type'),
-                                        'benefit_name': benefit_item['taxonomy_item_name'],
-                                        'segment_name': segment_name,
-                                        'detail_type': 'exclusion'
-                                    })
-
-                                # Store details organized by benefit
-                                self.details['limits'][benefit_key] = limits
-                                self.details['conditions'][benefit_key] = conditions
-                                self.details['exclusions'][benefit_key] = exclusions
-
-                        self.benefits[segment_name] = benefits
-
-        return segments
+        """Fetch segment taxonomy items and their benefits from GraphQL endpoint using unified fetcher."""
+        
+        # Use the unified taxonomy fetcher
+        self.taxonomy_data = self.taxonomy_fetcher.fetch_taxonomy_data(self.dcm_id)
+        
+        # Extract data for analysis from the unified fetcher result
+        self.segments = self.taxonomy_data.segments
+        self.benefits = self.taxonomy_data.benefits
+        self.details = self.taxonomy_data.details
+        
+        return self.segments
 
     def create_segment_prompt(self, segment_info: Dict) -> ChatPromptTemplate:
         """Create a prompt template for a specific segment."""
@@ -1425,7 +1326,8 @@ async def main():
             success = seed_to_directus(
                 analysis_results=seeder_format,
                 product_id=args.product_id,
-                dry_run=args.dry_run_directus
+                dry_run=args.dry_run_directus,
+                taxonomy_data=analyzer.taxonomy_data
             )
 
             if success:

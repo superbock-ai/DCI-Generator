@@ -45,6 +45,245 @@ class DirectusConfig:
 # SeededData class removed - now using direct Directus queries by product_id
 
 
+@dataclass
+class TaxonomyData:
+    """Unified taxonomy data structure containing both analysis data and relationship mappings"""
+    segments: List[Dict]
+    benefits: Dict[str, List[Dict]]
+    details: Dict[str, Dict[str, List[Dict]]]
+    mappings: Dict[str, Dict[str, str]]
+
+
+class UnifiedTaxonomyFetcher:
+    """Unified taxonomy fetcher that retrieves data for both analysis and Directus operations"""
+    
+    def __init__(self, graphql_url: str, auth_token: str):
+        self.graphql_url = graphql_url
+        self.auth_token = auth_token
+        self._cached_data = None
+        
+    def fetch_taxonomy_data(self, dcm_id: str, force_refresh: bool = False) -> TaxonomyData:
+        """
+        Fetch complete taxonomy data for both analysis and relationship mapping.
+        
+        Args:
+            dcm_id: The DCM product ID to fetch taxonomy for
+            force_refresh: If True, bypass cache and fetch fresh data
+            
+        Returns:
+            TaxonomyData containing segments, benefits, details, and relationship mappings
+        """
+        # Return cached data if available and not forcing refresh
+        if self._cached_data and not force_refresh:
+            return self._cached_data
+            
+        # Set up GraphQL client
+        transport = RequestsHTTPTransport(
+            url=self.graphql_url,
+            headers={'Authorization': f'Bearer {self.auth_token}'}
+        )
+        client = Client(transport=transport)
+        
+        # Read the GraphQL query
+        query_file = os.path.join(os.path.dirname(__file__), 'graphql', 'GetCompleteTaxonomyHierarchy.graphql')
+        with open(query_file, 'r') as f:
+            query_text = f.read()
+        
+        query = gql(query_text)
+        variables = {"dcm_id": dcm_id}
+        
+        # Execute the query
+        result = client.execute(query, variable_values=variables)
+        
+        # Initialize data structures
+        segments = []
+        benefits = {}
+        details = {'limits': {}, 'conditions': {}, 'exclusions': {}}
+        mappings = {
+            'segments': {},
+            'benefits': {},
+            'conditions': {},
+            'limits': {},
+            'exclusions': {}
+        }
+        
+        # Process taxonomy items
+        for item in result['taxonomy_items']:
+            if item['category'] == 'product_type':
+                for parent_rel in item['parent_relationships']:
+                    segment_item = parent_rel['related_taxonomy_item']
+                    if segment_item['category'] == 'segment_type':
+                        segment_name = segment_item['taxonomy_item_name']
+                        
+                        # Extract segment info for analysis
+                        segment_data = {
+                            'id': segment_item['id'],
+                            'name': segment_name,
+                            'description': segment_item['description'],
+                            'aliases': segment_item['aliases'],
+                            'examples': segment_item['examples'],
+                            'llm_instruction': segment_item['llm_instruction']
+                        }
+                        segments.append(segment_data)
+                        
+                        # Map segment for Directus relationships
+                        mappings['segments'][segment_name] = parent_rel['id']
+                        
+                        # Process benefits for this segment
+                        segment_benefits = []
+                        for benefit_rel in segment_item.get('parent_relationships', []):
+                            benefit_item = benefit_rel['related_taxonomy_item']
+                            if benefit_item['category'] == 'benefit_type':
+                                benefit_name = benefit_item['taxonomy_item_name']
+                                
+                                # Extract benefit info for analysis
+                                benefit_data = {
+                                    'id': benefit_item['id'],
+                                    'name': benefit_name,
+                                    'description': benefit_item['description'],
+                                    'aliases': benefit_item['aliases'],
+                                    'examples': benefit_item['examples'],
+                                    'llm_instruction': benefit_item['llm_instruction'],
+                                    'segment_name': segment_name,
+                                    'unit': benefit_item.get('unit'),
+                                    'data_type': benefit_item.get('data_type')
+                                }
+                                segment_benefits.append(benefit_data)
+                                
+                                # Map benefit for Directus relationships
+                                benefit_key = f"{segment_name}_{benefit_name}"
+                                mappings['benefits'][benefit_key] = benefit_rel['id']
+                                
+                                # Process details (limits, conditions, exclusions)
+                                self._process_benefit_details(
+                                    benefit_item, benefit_name, segment_name, 
+                                    details, mappings
+                                )
+                        
+                        benefits[segment_name] = segment_benefits
+                        
+                        # Process segment-level details
+                        self._process_segment_details(
+                            segment_item, segment_name, mappings
+                        )
+        
+        # Cache and return the data
+        taxonomy_data = TaxonomyData(
+            segments=segments,
+            benefits=benefits, 
+            details=details,
+            mappings=mappings
+        )
+        self._cached_data = taxonomy_data
+        return taxonomy_data
+    
+    def _process_benefit_details(self, benefit_item: Dict, benefit_name: str, 
+                                segment_name: str, details: Dict, mappings: Dict):
+        """Process limits, conditions, and exclusions for a benefit"""
+        benefit_key = f"{segment_name}_{benefit_name}"
+        
+        # Process limits
+        limits = []
+        for limit_rel in benefit_item.get('benefit_limits', []):
+            limit_item = limit_rel['related_taxonomy_item']
+            limit_name = limit_item['taxonomy_item_name']
+            
+            limits.append({
+                'id': limit_item['id'],
+                'name': limit_name,
+                'description': limit_item['description'],
+                'aliases': limit_item['aliases'],
+                'examples': limit_item['examples'],
+                'llm_instruction': limit_item.get('llm_instruction', ''),
+                'unit': limit_item.get('unit'),
+                'data_type': limit_item.get('data_type'),
+                'benefit_name': benefit_name,
+                'segment_name': segment_name,
+                'detail_type': 'limit'
+            })
+            
+            # Map limit for Directus relationships
+            limit_key = f"{segment_name}_{benefit_name}_{limit_name}"
+            mappings['limits'][limit_key] = limit_rel['id']
+        
+        details['limits'][benefit_key] = limits
+        
+        # Process conditions
+        conditions = []
+        for condition_rel in benefit_item.get('benefit_conditions', []):
+            condition_item = condition_rel['related_taxonomy_item']
+            condition_name = condition_item['taxonomy_item_name']
+            
+            conditions.append({
+                'id': condition_item['id'],
+                'name': condition_name,
+                'description': condition_item['description'],
+                'aliases': condition_item['aliases'],
+                'examples': condition_item['examples'],
+                'llm_instruction': condition_item.get('llm_instruction', ''),
+                'unit': condition_item.get('unit'),
+                'data_type': condition_item.get('data_type'),
+                'benefit_name': benefit_name,
+                'segment_name': segment_name,
+                'detail_type': 'condition'
+            })
+            
+            # Map condition for Directus relationships
+            condition_key = f"{segment_name}_{benefit_name}_{condition_name}"
+            mappings['conditions'][condition_key] = condition_rel['id']
+        
+        details['conditions'][benefit_key] = conditions
+        
+        # Process exclusions
+        exclusions = []
+        for exclusion_rel in benefit_item.get('benefit_exclusions', []):
+            exclusion_item = exclusion_rel['related_taxonomy_item']
+            exclusion_name = exclusion_item['taxonomy_item_name']
+            
+            exclusions.append({
+                'id': exclusion_item['id'],
+                'name': exclusion_name,
+                'description': exclusion_item['description'],
+                'aliases': exclusion_item['aliases'],
+                'examples': exclusion_item['examples'],
+                'llm_instruction': exclusion_item.get('llm_instruction', ''),
+                'unit': exclusion_item.get('unit'),
+                'data_type': exclusion_item.get('data_type'),
+                'benefit_name': benefit_name,
+                'segment_name': segment_name,
+                'detail_type': 'exclusion'
+            })
+            
+            # Map exclusion for Directus relationships
+            exclusion_key = f"{segment_name}_{benefit_name}_{exclusion_name}"
+            mappings['exclusions'][exclusion_key] = exclusion_rel['id']
+        
+        details['exclusions'][benefit_key] = exclusions
+    
+    def _process_segment_details(self, segment_item: Dict, segment_name: str, mappings: Dict):
+        """Process segment-level details (conditions, limits, exclusions)"""
+        
+        # Process segment-level conditions
+        for condition_rel in segment_item.get('segment_conditions', []):
+            condition_item = condition_rel['related_taxonomy_item']
+            condition_name = condition_item['taxonomy_item_name']
+            condition_key = f"{segment_name}_{condition_name}"
+            mappings['conditions'][condition_key] = condition_rel['id']
+        
+        # Process segment-level limits  
+        for limit_rel in segment_item.get('segment_limits', []):
+            limit_item = limit_rel['related_taxonomy_item']
+            limit_name = limit_item['taxonomy_item_name']
+            limit_key = f"{segment_name}_{limit_name}"
+            mappings['limits'][limit_key] = limit_rel['id']
+        
+        # Process segment-level exclusions
+        for exclusion_rel in segment_item.get('segment_exclusions', []):
+            exclusion_item = exclusion_rel['related_taxonomy_item']
+            exclusion_name = exclusion_item['taxonomy_item_name']
+            exclusion_key = f"{segment_name}_{exclusion_name}"
+            mappings['exclusions'][exclusion_key] = exclusion_rel['id']
+
 class DirectusClient:
     """Client for interacting with Directus API"""
 
@@ -111,99 +350,33 @@ class DirectusSeeder:
         self.client = client
         self.dry_run = dry_run
         self.taxonomy_mappings = {}
+        self.taxonomy_fetcher = None
 
     def fetch_taxonomy_mappings(self, dcm_id: str, graphql_url: str, auth_token: str):
-        """Fetch taxonomy item mappings from GraphQL endpoint"""
+        """Fetch taxonomy item mappings from GraphQL endpoint using unified fetcher"""
         print("Fetching taxonomy mappings...")
-
-        transport = RequestsHTTPTransport(
-            url=graphql_url,
-            headers={'Authorization': f'Bearer {auth_token}'}
-        )
-        client = Client(transport=transport)
-
-        # Load the GraphQL query
-        query_file = os.path.join(os.path.dirname(__file__), 'graphql', 'GetCompleteTaxonomyHierarchy.graphql')
-        with open(query_file, 'r') as f:
-            query_text = f.read()
-
-        query = gql(query_text)
-
+        
         try:
-            result = client.execute(query, variable_values={'dcm_id': dcm_id})
-
-            # Build mappings for segments, benefits, and detail types
-            mappings = {
-                'segments': {},
-                'benefits': {},
-                'conditions': {},
-                'limits': {},
-                'exclusions': {}
-            }
-
-            # Process taxonomy items
-            for product_type in result.get('taxonomy_items', []):
-                for segment_rel in product_type.get('parent_relationships', []):
-                    segment_item = segment_rel.get('related_taxonomy_item', {})
-                    segment_name = segment_item.get('taxonomy_item_name', '')
-
-                    # Map segment names to taxonomy relationship IDs
-                    mappings['segments'][segment_name] = segment_rel.get('id')
-
-                    # Process benefits within segments
-                    for benefit_rel in segment_item.get('parent_relationships', []):
-                        benefit_item = benefit_rel.get('related_taxonomy_item', {})
-                        benefit_name = benefit_item.get('taxonomy_item_name', '')
-
-                        # Create compound key for benefit mapping
-                        benefit_key = f"{segment_name}_{benefit_name}"
-                        mappings['benefits'][benefit_key] = benefit_rel.get('id')
-
-                        # Process benefit-level details
-                        for condition_rel in benefit_item.get('benefit_conditions', []):
-                            condition_item = condition_rel.get('related_taxonomy_item', {})
-                            condition_name = condition_item.get('taxonomy_item_name', '')
-                            condition_key = f"{segment_name}_{benefit_name}_{condition_name}"
-                            mappings['conditions'][condition_key] = condition_rel.get('id')
-
-                        for limit_rel in benefit_item.get('benefit_limits', []):
-                            limit_item = limit_rel.get('related_taxonomy_item', {})
-                            limit_name = limit_item.get('taxonomy_item_name', '')
-                            limit_key = f"{segment_name}_{benefit_name}_{limit_name}"
-                            mappings['limits'][limit_key] = limit_rel.get('id')
-
-                        for exclusion_rel in benefit_item.get('benefit_exclusions', []):
-                            exclusion_item = exclusion_rel.get('related_taxonomy_item', {})
-                            exclusion_name = exclusion_item.get('taxonomy_item_name', '')
-                            exclusion_key = f"{segment_name}_{benefit_name}_{exclusion_name}"
-                            mappings['exclusions'][exclusion_key] = exclusion_rel.get('id')
-
-                    # Process segment-level details
-                    for condition_rel in segment_item.get('segment_conditions', []):
-                        condition_item = condition_rel.get('related_taxonomy_item', {})
-                        condition_name = condition_item.get('taxonomy_item_name', '')
-                        condition_key = f"{segment_name}_{condition_name}"
-                        mappings['conditions'][condition_key] = condition_rel.get('id')
-
-                    for limit_rel in segment_item.get('segment_limits', []):
-                        limit_item = limit_rel.get('related_taxonomy_item', {})
-                        limit_name = limit_item.get('taxonomy_item_name', '')
-                        limit_key = f"{segment_name}_{limit_name}"
-                        mappings['limits'][limit_key] = limit_rel.get('id')
-
-                    for exclusion_rel in segment_item.get('segment_exclusions', []):
-                        exclusion_item = exclusion_rel.get('related_taxonomy_item', {})
-                        exclusion_name = exclusion_item.get('taxonomy_item_name', '')
-                        exclusion_key = f"{segment_name}_{exclusion_name}"
-                        mappings['exclusions'][exclusion_key] = exclusion_rel.get('id')
-
-            self.taxonomy_mappings = mappings
-            print(f"✓ Loaded taxonomy mappings: {len(mappings['segments'])} segments, {len(mappings['benefits'])} benefits")
-
+            # Initialize the unified taxonomy fetcher if not already done
+            if not self.taxonomy_fetcher:
+                self.taxonomy_fetcher = UnifiedTaxonomyFetcher(graphql_url, auth_token)
+            
+            # Fetch the unified taxonomy data
+            taxonomy_data = self.taxonomy_fetcher.fetch_taxonomy_data(dcm_id)
+            
+            # Extract just the mappings for the seeder
+            self.taxonomy_mappings = taxonomy_data.mappings
+            print(f"✓ Loaded taxonomy mappings: {len(self.taxonomy_mappings['segments'])} segments, {len(self.taxonomy_mappings['benefits'])} benefits")
+            
         except Exception as e:
             print(f"Error fetching taxonomy mappings: {e}")
             print("Continuing without taxonomy mappings - items may fail to create")
             self.taxonomy_mappings = {'segments': {}, 'benefits': {}, 'conditions': {}, 'limits': {}, 'exclusions': {}}
+
+    def set_taxonomy_data(self, taxonomy_data):
+        """Set pre-fetched taxonomy data from unified fetcher to avoid duplicate GraphQL calls"""
+        self.taxonomy_mappings = taxonomy_data.mappings
+        print(f"✓ Using pre-fetched taxonomy mappings: {len(self.taxonomy_mappings['segments'])} segments, {len(self.taxonomy_mappings['benefits'])} benefits")
 
 
     def create_segment(self, segment_key: str, segment_data: Dict[str, Any], product_id: str) -> str:
@@ -417,12 +590,20 @@ class DirectusSeeder:
                                           product_id, segment_id, benefit_id,
                                           segment_name, benefit_name)
 
-    def seed_analysis_results(self, analysis_results: Dict[str, Any], product_id: str, graphql_url: str, auth_token: str):
-        """Main method to seed all analysis results"""
+    def seed_analysis_results(self, analysis_results: Dict[str, Any], product_id: str, graphql_url: str, auth_token: str, taxonomy_data=None):
+        """Main method to seed all analysis results
+        
+        Args:
+            analysis_results: The analysis results to seed
+            product_id: ID of the existing dcm_product 
+            graphql_url: GraphQL endpoint URL
+            auth_token: Authentication token
+            taxonomy_data: Optional pre-fetched taxonomy data to avoid duplicate GraphQL calls
+        """
         print(f"Starting to seed Generali analysis results {'(DRY RUN)' if self.dry_run else ''}")
         print("=" * 60)
 
-        # Get DCM ID from existing product and fetch taxonomy mappings
+        # Get DCM ID from existing product and fetch/set taxonomy mappings
         if not self.dry_run:
             print(f"Using existing dcm_product: {product_id}")
             # Get the DCM ID from the existing product
@@ -436,13 +617,25 @@ class DirectusSeeder:
                     print(f"Error: Product {product_id} has no domain_context_model")
                     return
                 print(f"✓ Found product with DCM ID: {dcm_id}")
-                self.fetch_taxonomy_mappings(dcm_id, graphql_url, auth_token)
+                
+                # Use pre-fetched taxonomy data if provided, otherwise fetch fresh data
+                if taxonomy_data:
+                    print("Using pre-fetched taxonomy data from analysis phase...")
+                    self.set_taxonomy_data(taxonomy_data)
+                else:
+                    print("Fetching fresh taxonomy data...")
+                    self.fetch_taxonomy_mappings(dcm_id, graphql_url, auth_token)
+                    
             except Exception as e:
                 print(f"Error fetching product info: {e}")
                 return
         else:
             print(f"[DRY RUN] Would use existing dcm_product: {product_id}")
-            print("[DRY RUN] Skipping taxonomy mapping fetch")
+            if taxonomy_data:
+                print("[DRY RUN] Would use pre-fetched taxonomy data")
+                self.set_taxonomy_data(taxonomy_data) 
+            else:
+                print("[DRY RUN] Skipping taxonomy mapping fetch")
 
         # Get the product data
         product_data = analysis_results.get(product_id, {})
