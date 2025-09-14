@@ -439,7 +439,8 @@ class DirectusSeeder:
                 numeric_value = float(clean_str)
                 cleaned_value = int(numeric_value) if numeric_value.is_integer() else numeric_value
             except ValueError:
-                cleaned_value = raw_value
+                # Truncate string values to 250 characters for database compatibility
+                cleaned_value = str(raw_value)[:250] if len(str(raw_value)) > 250 else raw_value
 
         data = {
             'status': 'published',

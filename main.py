@@ -255,7 +255,7 @@ class DocumentAnalyzer:
     def __init__(self,
                  segment_chunk_size: int = 8,
                  benefit_chunk_size: int = 8,
-                 detail_chunk_size: int = 3,
+                 detail_chunk_size: int = 8,
                  debug_mode: bool = False,
                  dcm_id: str = None):
         """
