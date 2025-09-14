@@ -29,6 +29,17 @@ load_dotenv()
 set_llm_cache(InMemoryCache())
 
 
+def convert_pydantic_to_dict(obj):
+    """Recursively convert Pydantic models to dictionaries."""
+    if hasattr(obj, 'dict'):  # Pydantic model
+        return obj.dict()
+    elif isinstance(obj, dict):
+        return {k: convert_pydantic_to_dict(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_pydantic_to_dict(item) for item in obj]
+    else:
+        return obj
+
 def parse_openai_wait_time(error_message: str):
     """
     Parse the wait time from OpenAI's rate limit error message.
@@ -1108,17 +1119,6 @@ Always set item_name to: "{detail_info['name']}"
         filename = f"{document_name}_analysis_results.json"
 
         # Convert Pydantic models to dictionaries in the new hierarchical structure
-        def convert_pydantic_to_dict(obj):
-            """Recursively convert Pydantic models to dictionaries."""
-            if hasattr(obj, 'dict'):  # Pydantic model
-                return obj.dict()
-            elif isinstance(obj, dict):
-                return {k: convert_pydantic_to_dict(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [convert_pydantic_to_dict(item) for item in obj]
-            else:
-                return obj
-
         serializable_results = convert_pydantic_to_dict(results)
 
         with open(filename, 'w', encoding='utf-8') as f:
@@ -1357,17 +1357,6 @@ async def main():
 
             # Convert results to the format expected by directus_seeder
             # The seeder expects a structure like: {document_name: {segments: [...]}
-            def convert_pydantic_to_dict(obj):
-                """Recursively convert Pydantic models to dictionaries."""
-                if hasattr(obj, 'dict'):  # Pydantic model
-                    return obj.dict()
-                elif isinstance(obj, dict):
-                    return {k: convert_pydantic_to_dict(v) for k, v in obj.items()}
-                elif isinstance(obj, list):
-                    return [convert_pydantic_to_dict(item) for item in obj]
-                else:
-                    return obj
-
             serialized_results = convert_pydantic_to_dict(results)
             seeder_format = {document_name: serialized_results}
 
