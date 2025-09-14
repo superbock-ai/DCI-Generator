@@ -3,7 +3,7 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Any
 
 from dotenv import load_dotenv
 from gql import gql, Client
@@ -20,7 +20,7 @@ import re
 import math
 
 # Import Directus seeding functionality
-from directus_seeder import seed_to_directus, cleanup_seeded_data
+from directus_tools import DirectusClient, DirectusConfig, DirectusSeeder
 
 # Load environment variables from .env file
 load_dotenv()
@@ -39,6 +39,69 @@ def convert_pydantic_to_dict(obj):
         return [convert_pydantic_to_dict(item) for item in obj]
     else:
         return obj
+
+
+def cleanup_seeded_data(product_id: str) -> bool:
+    """
+    Clean up all data associated with a dcm_product from Directus.
+    
+    Args:
+        product_id: The dcm_product UUID to clean up all associated data for
+        
+    Returns:
+        bool: True if cleanup was successful, False otherwise
+    """
+    # Get configuration from environment
+    directus_url = os.getenv('DIRECTUS_URL')
+    auth_token = os.getenv('DIRECTUS_AUTH_TOKEN')
+
+    if not directus_url or not auth_token:
+        print("Missing DIRECTUS_URL or DIRECTUS_AUTH_TOKEN environment variables")
+        return False
+
+    config = DirectusConfig(url=directus_url, auth_token=auth_token)
+    client = DirectusClient(config)
+    seeder = DirectusSeeder(client, dry_run=False)
+
+    try:
+        return seeder.cleanup_by_product_id(product_id)
+    except Exception as e:
+        print(f"Error during cleanup: {e}")
+        return False
+
+def seed_to_directus(analysis_results: Dict[str, Any], product_id: str, dry_run: bool = False) -> bool:
+    """
+    Seed analysis results to Directus under an existing dcm_product.
+    
+    Args:
+        analysis_results: The analysis results dictionary from main.py
+        product_id: Existing dcm_product ID to seed data under
+        dry_run: If True, only show what would be inserted without actual insertion
+    
+    Returns:
+        bool: True if seeding was successful, False otherwise
+    """
+    # Get configuration from environment
+    directus_url = os.getenv('DIRECTUS_URL')
+    auth_token = os.getenv('DIRECTUS_AUTH_TOKEN')
+
+    if not directus_url or not auth_token:
+        print("Missing DIRECTUS_URL or DIRECTUS_AUTH_TOKEN environment variables")
+        return False
+
+    config = DirectusConfig(url=directus_url, auth_token=auth_token)
+    client = DirectusClient(config)
+    seeder = DirectusSeeder(client, dry_run=dry_run)
+    
+    graphql_url = directus_url + '/graphql'
+
+    try:
+        seeder.seed_analysis_results(analysis_results, product_id, graphql_url, auth_token)
+        return True
+    except Exception as e:
+        print(f"Error during seeding: {e}")
+        return False
+
 
 def parse_openai_wait_time(error_message: str):
     """
@@ -216,17 +279,17 @@ class DocumentAnalyzer:
                         You will receive a markdown version of the insurance document and analyse the document for the following information:"""
 
         # Get configuration from environment variables
-        graphql_url = os.getenv("GRAPHQL_URL", "https://app-uat.quinsights.tech/graphql")
-        graphql_token = os.getenv("GRAPHQL_AUTH_TOKEN")
+        graphql_url = os.getenv("DIRECTUS_URL", "https://app-uat.quinsights.tech") + "/graphql"
+        directus_token = os.getenv("DIRECTUS_AUTH_TOKEN")
         openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-        if not graphql_token:
-            raise ValueError("GRAPHQL_AUTH_TOKEN environment variable is required")
+        if not directus_token:
+            raise ValueError("DIRECTUS_AUTH_TOKEN environment variable is required")
 
         # Initialize GraphQL client
         transport = RequestsHTTPTransport(
             url=graphql_url,
-            headers={"Authorization": f"Bearer {graphql_token}"},
+            headers={"Authorization": f"Bearer {directus_token}"},
             use_json=True
         )
         self.graphql_client = Client(transport=transport, fetch_schema_from_transport=True)
@@ -1237,9 +1300,9 @@ async def main():
         print("Please set your OpenAI API key in .env file")
         return 1
 
-    if not os.getenv("GRAPHQL_AUTH_TOKEN"):
-        print("Error: GRAPHQL_AUTH_TOKEN environment variable is not set")
-        print("Please set your GraphQL auth token in .env file")
+    if not os.getenv("DIRECTUS_AUTH_TOKEN"):
+        print("Error: DIRECTUS_AUTH_TOKEN environment variable is not set")
+        print("Please set your Directus auth token in .env file")
         return 1
 
     # Handle Directus cleanup if requested
@@ -1261,15 +1324,14 @@ async def main():
         print(f"Fetching product from Directus: {args.product_id}")
         
         # Setup Directus client
-        graphql_url = os.getenv('GRAPHQL_URL')
-        auth_token = os.getenv('GRAPHQL_AUTH_TOKEN')
-        if not graphql_url or not auth_token:
-            print("Error: Missing GRAPHQL_URL or GRAPHQL_AUTH_TOKEN environment variables")
+        directus_url = os.getenv('DIRECTUS_URL')
+        directus_token = os.getenv('DIRECTUS_AUTH_TOKEN')
+        if not directus_url or not directus_token:
+            print("Error: Missing DIRECTUS_URL or DIRECTUS_AUTH_TOKEN environment variables")
             return 1
         
-        directus_url = graphql_url.replace('/graphql', '')
-        from directus_seeder import DirectusConfig, DirectusClient
-        config = DirectusConfig(url=directus_url, auth_token=auth_token)
+        from directus_tools import DirectusConfig, DirectusClient
+        config = DirectusConfig(url=directus_url, auth_token=directus_token)
         client = DirectusClient(config)
         
         # Fetch the product
