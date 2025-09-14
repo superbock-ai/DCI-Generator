@@ -18,7 +18,9 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_i
 from openai import RateLimitError
 import re
 import math
-import json
+
+# Import Directus seeding functionality
+from directus_seeder import seed_to_directus, cleanup_seeded_data
 
 # Load environment variables from .env file
 load_dotenv()
@@ -167,7 +169,7 @@ class AnalysisResult(BaseModel):
     llm_summary: str = Field(description="LLM-generated summary of the section in the language of the input document.")
     item_name: str = Field(description="Name of the item being analyzed in the language of the input document.")
     is_included: bool = Field(description="Indicates if the item is included.")
-    description: str = Field(description="Description of what this item covers.")
+    description: str = Field(description="Description of what this item covers in the language of the input document.")
     unit: str = Field(description="Unit of measurement if applicable (e.g., CHF, days, percentage).")
     value: str = Field(description="Specific value or amount found in the document.")
 
@@ -622,7 +624,7 @@ Always set item_name to: "{detail_info['name']}"
             detail_runnables = {}
             for detail_key, detail_data in chunk:
                 detail_runnables[detail_key] = detail_data['chain']
-
+                
             # Process this chunk with retry
             chunk_results = await self._process_detail_chunk(detail_runnables, document_text)
             
@@ -1022,6 +1024,14 @@ async def main():
                        help="Delete existing debug files before running (forces full re-run)")
     parser.add_argument("--debug-from", choices=["segments", "benefits", "details"],
                        help="Force re-run from specific tier (deletes subsequent debug files)")
+    parser.add_argument("--seed-directus", action="store_true",
+                       help="Seed analysis results to Directus after analysis")
+    parser.add_argument("--product-id",
+                       help="Existing dcm_product ID to seed data under (required with --seed-directus)")
+    parser.add_argument("--dry-run-directus", action="store_true",
+                       help="Dry run mode for Directus seeding - show what would be inserted")
+    parser.add_argument("--cleanup-directus", action="store_true",
+                       help="Clean up previously seeded data from Directus")
 
     args = parser.parse_args()
 
@@ -1040,6 +1050,21 @@ async def main():
         print("Error: GRAPHQL_AUTH_TOKEN environment variable is not set")
         print("Please set your GraphQL auth token in .env file")
         return 1
+
+    # Handle Directus cleanup if requested
+    if args.cleanup_directus:
+        print("=" * 60)
+        print("Cleaning up previously seeded data from Directus...")
+        print("=" * 60)
+
+        success = cleanup_seeded_data()
+        if success:
+            print("✓ Successfully cleaned up seeded data from Directus!")
+        else:
+            print("✗ Failed to clean up seeded data from Directus")
+            return 1
+        return 0
+
 
     try:
         # Handle debug flags
@@ -1095,6 +1120,45 @@ async def main():
         # Show detailed results if requested
         if args.detailed:
             analyzer.print_detailed_results(results, args.document_path)
+
+        # Seed to Directus if requested
+        if args.seed_directus:
+            if not args.product_id:
+                print("Error: --product-id is required when using --seed-directus")
+                print("Use: --product-id <your-existing-dcm-product-id>")
+                return 1
+
+            print("\n" + "=" * 60)
+            print("Seeding results to Directus...")
+            print("=" * 60)
+
+            # Convert results to the format expected by directus_seeder
+            # The seeder expects a structure like: {document_name: {segments: [...]}}
+            def convert_pydantic_to_dict(obj):
+                """Recursively convert Pydantic models to dictionaries."""
+                if hasattr(obj, 'dict'):  # Pydantic model
+                    return obj.dict()
+                elif isinstance(obj, dict):
+                    return {k: convert_pydantic_to_dict(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_pydantic_to_dict(item) for item in obj]
+                else:
+                    return obj
+
+            serialized_results = convert_pydantic_to_dict(results)
+            seeder_format = {document_name: serialized_results}
+
+            success = seed_to_directus(
+                analysis_results=seeder_format,
+                product_id=args.product_id,
+                dry_run=args.dry_run_directus
+            )
+
+            if success:
+                print("✓ Successfully seeded results to Directus!")
+            else:
+                print("✗ Failed to seed results to Directus")
+                return 1
 
         print("\nAnalysis completed successfully!")
 

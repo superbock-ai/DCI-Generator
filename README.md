@@ -24,6 +24,7 @@ The DCI (Domain Context Item) Generator performs intelligent, context-aware anal
 - **Full document analysis** - Not limited to specific sections
 - **German insurance expertise** - Specialized prompts for German AVB documents
 - **Flexible export options** - JSON export and detailed console output
+- **Directus CMS integration** - Seed analysis results directly into Directus with hierarchical relationships
 - **Environment-based configuration** - Secure credential management
 - **Chunked parallel processing** - Configurable chunk sizes per analysis tier
 - **Smart rate limiting** - Automatic retry with OpenAI wait time parsing
@@ -55,9 +56,9 @@ The DCI (Domain Context Item) Generator performs intelligent, context-aware anal
 3. **Required environment variables**:
    ```env
    OPENAI_API_KEY=your-openai-api-key
-   GRAPHQL_AUTH_TOKEN=your-graphql-token
+   GRAPHQL_AUTH_TOKEN=your-graphql-token  # Used for both GraphQL and Directus
    OPENAI_MODEL=gpt-4o-mini  # optional
-   GRAPHQL_URL=https://app-uat.quinsights.tech/graphql  # optional
+   GRAPHQL_URL=https://app-uat.quinsights.tech/graphql  # optional, also used for Directus API
    ```
 
 ## 🎯 Usage
@@ -110,6 +111,21 @@ uv run main.py document.md --debug --debug-from benefits
 
 # Ideal for token limit issues - resume with smaller chunks
 uv run main.py document.md --debug --detail-chunks 1
+```
+
+### Directus Integration
+```bash
+# Analyze and seed to Directus in one step
+uv run main.py document.md --export --debug --seed-directus --product-id 92f3ee1b-9b03-4085-ab01-555cd9b0507c
+
+# Test seeding with dry run (shows what would be inserted)
+uv run main.py document.md --seed-directus --product-id 92f3ee1b-9b03-4085-ab01-555cd9b0507c --dry-run-directus
+
+# Seed from existing debug files (with debug mode, uses cached analysis)
+uv run main.py document.md --debug --seed-directus --product-id 92f3ee1b-9b03-4085-ab01-555cd9b0507c
+
+# Clean up previously seeded data
+uv run main.py document.md --cleanup-directus
 ```
 
 ### Available Documents
@@ -190,6 +206,7 @@ The system includes sample documents from major Swiss insurers:
 - **AnalysisResult**: Universal Pydantic model for all analysis items
 - **GraphQL Integration**: Live taxonomy data retrieval
 - **LangChain Chains**: Structured LLM processing with caching
+- **DirectusSeeder**: Hierarchical data seeding into Directus CMS
 
 ### Data Sources
 
@@ -205,6 +222,7 @@ The system includes sample documents from major Swiss insurers:
 4. **Parallel Execution**: Maximize speed with simultaneous processing
 5. **Context Integration**: Each tier uses previous results as context
 6. **Tree Assembly**: Build hierarchical structure with taxonomy-aligned keys
+7. **Directus Seeding** (optional): Insert results into Directus with proper relationships
 
 ## 🔧 Technical Details
 
@@ -255,6 +273,10 @@ class AnalysisResult(BaseModel):
 | `--debug` | - | Enable debug mode with auto-resume |
 | `--debug-clean` | - | Delete all debug files before running |
 | `--debug-from` | - | Force re-run from specific tier (segments/benefits/details) |
+| `--seed-directus` | - | Seed analysis results to Directus after analysis |
+| `--product-id` | - | Existing dcm_product UUID to seed data under (required with --seed-directus) |
+| `--dry-run-directus` | - | Show what would be seeded without making changes |
+| `--cleanup-directus` | - | Remove previously seeded data from Directus |
 
 ### Rate Limiting & Reliability
 - **Chunked Processing**: Processes items in configurable batches to avoid API limits
@@ -277,6 +299,7 @@ class AnalysisResult(BaseModel):
 ```
 dci_generator/
 ├── main.py                          # Main CLI application
+├── directus_seeder.py               # Directus integration module
 ├── dev.ipynb                        # Development notebook
 ├── graphql/
 │   └── GetCompleteTaxonomyHierarchy.graphql  # GraphQL query
@@ -284,6 +307,7 @@ dci_generator/
 │   └── markdown/                    # Insurance documents
 ├── segment_structured_output.json   # Output schema definition
 ├── example_gql_response.json       # Sample GraphQL response
+├── README_SEEDER.md                # Directus seeding documentation
 ├── .env.example                    # Environment template
 ├── .env                           # Environment configuration (gitignored)
 ├── CLAUDE.md                      # Developer documentation
@@ -309,6 +333,52 @@ dci_generator/
 - **Initial Analysis**: 30-60 seconds (depends on document complexity)
 - **Cached Analysis**: 2-5 seconds (near-instant for repeated items)
 - **Memory Usage**: ~50-100MB (including cached results)
+
+## 🗃️ Directus Integration
+
+### Overview
+The DCI Generator includes seamless integration with Directus CMS, allowing you to automatically seed analysis results into a structured database with proper hierarchical relationships.
+
+### Features
+- **Hierarchical Data Structure**: Maintains relationships between dcm_product → segments → benefits → conditions/limits/exclusions
+- **Existing Product Support**: Works with pre-existing dcm_product entries (no product creation required)
+- **Taxonomy Mapping**: Automatically maps analysis items to taxonomy relationships via GraphQL
+- **Swiss Data Handling**: Intelligent processing of Swiss number formats and German insurance terminology
+- **Debug Mode Integration**: Can seed from cached debug files without re-running expensive analysis
+- **Cleanup Support**: Complete removal of seeded data while preserving original products
+
+### Workflow
+1. **Analyze Document**: Standard three-tier analysis (optionally with --debug for caching)
+2. **Seed to Directus**: Use --seed-directus with existing product ID
+3. **Data Validation**: System validates product, fetches taxonomy mappings, creates relationships
+4. **Cleanup (Optional)**: Remove seeded data using --cleanup-directus
+
+### Data Structure in Directus
+```
+dcm_product (existing)
+├── insurance_dcm_segment
+│   ├── insurance_dcm_benefit
+│   │   ├── insurance_dcm_condition
+│   │   ├── insurance_dcm_limit
+│   │   └── insurance_dcm_exclusion
+│   ├── insurance_dcm_condition (segment-level)
+│   ├── insurance_dcm_limit (segment-level)
+│   └── insurance_dcm_exclusion (segment-level)
+```
+
+### Example Usage
+```bash
+# Complete workflow: analyze + seed in one step
+uv run main.py generali.md --export --debug --seed-directus --product-id 92f3ee1b-9b03-4085-ab01-555cd9b0507c
+
+# Test before seeding (dry run)
+uv run main.py generali.md --seed-directus --product-id 92f3ee1b-9b03-4085-ab01-555cd9b0507c --dry-run-directus
+
+# Seed from existing debug files (fast, no re-analysis)
+uv run main.py generali.md --debug --seed-directus --product-id 92f3ee1b-9b03-4085-ab01-555cd9b0507c
+```
+
+For detailed Directus seeding documentation, see `README_SEEDER.md`.
 
 ## 🔬 Development
 
