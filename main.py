@@ -1053,15 +1053,20 @@ async def main():
 
     # Handle Directus cleanup if requested
     if args.cleanup_directus:
+        if not args.product_id:
+            print("Error: --product-id is required when using --cleanup-directus")
+            print("Use: --product-id <dcm-product-id-to-cleanup>")
+            return 1
+
         print("=" * 60)
-        print("Cleaning up previously seeded data from Directus...")
+        print(f"Cleaning up all data for product: {args.product_id}")
         print("=" * 60)
 
-        success = cleanup_seeded_data()
+        success = cleanup_seeded_data(args.product_id)
         if success:
-            print("✓ Successfully cleaned up seeded data from Directus!")
+            print("✓ Successfully cleaned up all data from Directus!")
         else:
-            print("✗ Failed to clean up seeded data from Directus")
+            print("✗ Failed to clean up data from Directus")
             return 1
         return 0
 

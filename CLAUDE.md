@@ -22,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Seed to Directus**: `uv run main.py document.md --seed-directus --product-id <dcm-product-id>`
 - **Dry run seeding**: `uv run main.py document.md --seed-directus --product-id <id> --dry-run-directus`
 - **Analysis + seeding**: `uv run main.py document.md --export --debug --seed-directus --product-id <id>`
-- **Cleanup seeded data**: `uv run main.py document.md --cleanup-directus`
+- **Cleanup product data**: `uv run main.py document.md --cleanup-directus --product-id <id>`
 
 ### Development Environment
 - **Interactive development**: Use `dev.ipynb` Jupyter notebook for experimentation and testing
@@ -182,7 +182,7 @@ uv run main.py document.md --chunk-size 15
 - `--seed-directus`: Enable seeding to Directus after analysis
 - `--product-id <uuid>`: Required UUID of existing dcm_product to seed data under
 - `--dry-run-directus`: Show what would be seeded without making changes
-- `--cleanup-directus`: Remove previously seeded data (preserves original product)
+- `--cleanup-directus`: Remove ALL data associated with a product (requires --product-id, DELETES the product itself)
 
 #### Seeding Workflow
 1. **Analysis Phase**: Standard three-tier document analysis (with optional debug mode)

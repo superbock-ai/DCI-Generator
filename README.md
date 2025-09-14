@@ -124,8 +124,8 @@ uv run main.py document.md --seed-directus --product-id 92f3ee1b-9b03-4085-ab01-
 # Seed from existing debug files (with debug mode, uses cached analysis)
 uv run main.py document.md --debug --seed-directus --product-id 92f3ee1b-9b03-4085-ab01-555cd9b0507c
 
-# Clean up previously seeded data
-uv run main.py document.md --cleanup-directus
+# Clean up ALL data for a product (including the product itself)
+uv run main.py document.md --cleanup-directus --product-id 92f3ee1b-9b03-4085-ab01-555cd9b0507c
 ```
 
 ### Available Documents
@@ -276,7 +276,7 @@ class AnalysisResult(BaseModel):
 | `--seed-directus` | - | Seed analysis results to Directus after analysis |
 | `--product-id` | - | Existing dcm_product UUID to seed data under (required with --seed-directus) |
 | `--dry-run-directus` | - | Show what would be seeded without making changes |
-| `--cleanup-directus` | - | Remove previously seeded data from Directus |
+| `--cleanup-directus` | - | Remove ALL data for a product from Directus (requires --product-id, DELETES product) |
 
 ### Rate Limiting & Reliability
 - **Chunked Processing**: Processes items in configurable batches to avoid API limits
@@ -345,13 +345,13 @@ The DCI Generator includes seamless integration with Directus CMS, allowing you 
 - **Taxonomy Mapping**: Automatically maps analysis items to taxonomy relationships via GraphQL
 - **Swiss Data Handling**: Intelligent processing of Swiss number formats and German insurance terminology
 - **Debug Mode Integration**: Can seed from cached debug files without re-running expensive analysis
-- **Cleanup Support**: Complete removal of seeded data while preserving original products
+- **Complete Cleanup**: Remove ALL data associated with a product including the product itself
 
 ### Workflow
 1. **Analyze Document**: Standard three-tier analysis (optionally with --debug for caching)
 2. **Seed to Directus**: Use --seed-directus with existing product ID
 3. **Data Validation**: System validates product, fetches taxonomy mappings, creates relationships
-4. **Cleanup (Optional)**: Remove seeded data using --cleanup-directus
+4. **Cleanup (Optional)**: Remove ALL product data using --cleanup-directus --product-id (DELETES the product)
 
 ### Data Structure in Directus
 ```

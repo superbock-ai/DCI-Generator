@@ -23,8 +23,8 @@ Usage:
 import os
 import json
 import requests
-from typing import Dict, List, Any, Set
-from dataclasses import dataclass, field
+from typing import Dict, List, Any
+from dataclasses import dataclass
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 import uuid
@@ -42,47 +42,7 @@ class DirectusConfig:
     auth_token: str
 
 
-@dataclass
-class SeededData:
-    """Track seeded data for cleanup"""
-    product_ids: Set[str] = field(default_factory=set)
-    segment_ids: Set[str] = field(default_factory=set)
-    benefit_ids: Set[str] = field(default_factory=set)
-    condition_ids: Set[str] = field(default_factory=set)
-    limit_ids: Set[str] = field(default_factory=set)
-    exclusion_ids: Set[str] = field(default_factory=set)
-
-    def save_to_file(self, filepath: str):
-        """Save seeded data to file for cleanup"""
-        data = {
-            'product_ids': list(self.product_ids),
-            'segment_ids': list(self.segment_ids),
-            'benefit_ids': list(self.benefit_ids),
-            'condition_ids': list(self.condition_ids),
-            'limit_ids': list(self.limit_ids),
-            'exclusion_ids': list(self.exclusion_ids),
-            'created_at': datetime.now(timezone.utc).isoformat()
-        }
-        with open(filepath, 'w') as f:
-            json.dump(data, f, indent=2)
-
-    @classmethod
-    def load_from_file(cls, filepath: str) -> 'SeededData':
-        """Load seeded data from file for cleanup"""
-        try:
-            with open(filepath, 'r') as f:
-                data = json.load(f)
-            instance = cls()
-            instance.product_ids = set(data.get('product_ids', []))
-            instance.segment_ids = set(data.get('segment_ids', []))
-            instance.benefit_ids = set(data.get('benefit_ids', []))
-            instance.condition_ids = set(data.get('condition_ids', []))
-            instance.limit_ids = set(data.get('limit_ids', []))
-            instance.exclusion_ids = set(data.get('exclusion_ids', []))
-            return instance
-        except FileNotFoundError:
-            print(f"No seeded data file found at {filepath}")
-            return cls()
+# SeededData class removed - now using direct Directus queries by product_id
 
 
 class DirectusClient:
@@ -150,7 +110,6 @@ class DirectusSeeder:
     def __init__(self, client: DirectusClient, dry_run: bool = False):
         self.client = client
         self.dry_run = dry_run
-        self.seeded_data = SeededData()
         self.taxonomy_mappings = {}
 
     def fetch_taxonomy_mappings(self, dcm_id: str, graphql_url: str, auth_token: str):
@@ -279,7 +238,6 @@ class DirectusSeeder:
 
         result = self.client.create_item('insurance_dcm_segment', data)
         segment_id = result['id']
-        self.seeded_data.segment_ids.add(segment_id)
         print(f"  ✓ Created segment: {data['segment_name']} (ID: {segment_id})")
         return segment_id
 
@@ -332,7 +290,6 @@ class DirectusSeeder:
 
         result = self.client.create_item('insurance_dcm_benefit', data)
         benefit_id = result['id']
-        self.seeded_data.benefit_ids.add(benefit_id)
         print(f"    ✓ Created benefit: {data['benefit_name']} (ID: {benefit_id})")
         return benefit_id
 
@@ -445,14 +402,6 @@ class DirectusSeeder:
         result = self.client.create_item(collection, data)
         detail_id = result['id']
 
-        # Track the seeded item
-        if detail_type == 'conditions':
-            self.seeded_data.condition_ids.add(detail_id)
-        elif detail_type == 'limits':
-            self.seeded_data.limit_ids.add(detail_id)
-        elif detail_type == 'exclusions':
-            self.seeded_data.exclusion_ids.add(detail_id)
-
         level = "product" if product_id and not segment_id else "segment" if segment_id and not benefit_id else "benefit"
         print(f"      ✓ Created {detail_type[:-1]}: {data.get(f'{detail_type[:-1]}_name')} at {level} level (ID: {detail_id})")
         return detail_id
@@ -503,9 +452,7 @@ class DirectusSeeder:
             print("No segments found in analysis results")
             return
 
-        # Track the existing product ID for potential cleanup
-        if not self.dry_run:
-            self.seeded_data.product_ids.add(product_id)
+        # No tracking needed - we can query Directus directly by product_id
 
         # Process each segment
         for segment_item in segments_data:
@@ -555,89 +502,132 @@ class DirectusSeeder:
                                                product_id=product_id, segment_id=segment_id, benefit_id=benefit_id,
                                                segment_name=segment_name, benefit_name=benefit_name)
 
-        # Save seeded data for cleanup
-        if not self.dry_run:
-            self.seeded_data.save_to_file('generali_seeded_data.json')
-            print(f"\n✓ Seeded data tracking saved to generali_seeded_data.json")
-
         print(f"\n✓ Seeding completed {'(DRY RUN)' if self.dry_run else ''}!")
-        self.print_summary()
 
-    def print_summary(self):
-        """Print summary of seeded items"""
-        print(f"\nSummary:")
-        product_count = len(self.seeded_data.product_ids)
-        if product_count > 0:
-            print(f"- Products: {product_count} (existing, not created)")
-        else:
-            print(f"- Products: 0")
-        print(f"- Segments: {len(self.seeded_data.segment_ids)}")
-        print(f"- Benefits: {len(self.seeded_data.benefit_ids)}")
-        print(f"- Conditions: {len(self.seeded_data.condition_ids)}")
-        print(f"- Limits: {len(self.seeded_data.limit_ids)}")
-        print(f"- Exclusions: {len(self.seeded_data.exclusion_ids)}")
+    # print_summary method removed - no longer tracking seeded data in memory
 
-    def cleanup_seeded_data(self, seeded_data_file: str = 'generali_seeded_data.json'):
-        """Delete all seeded data"""
-        print("Loading seeded data for cleanup...")
-        seeded_data = SeededData.load_from_file(seeded_data_file)
+    def cleanup_by_product_id(self, product_id: str):
+        """Delete all data associated with a dcm_product"""
+        print(f"Cleaning up all data for product: {product_id}")
+        print("=" * 60)
 
-        if not any([seeded_data.product_ids, seeded_data.segment_ids, seeded_data.benefit_ids,
-                   seeded_data.condition_ids, seeded_data.limit_ids, seeded_data.exclusion_ids]):
-            print("No seeded data found to cleanup")
-            return
-
-        print("Deleting seeded data...")
-
-        # Delete in reverse order to respect foreign key constraints
-        for exclusion_id in seeded_data.exclusion_ids:
-            try:
-                self.client.delete_item('insurance_dcm_exclusion', exclusion_id)
-                print(f"  ✓ Deleted exclusion: {exclusion_id}")
-            except Exception as e:
-                print(f"  ✗ Failed to delete exclusion {exclusion_id}: {e}")
-
-        for limit_id in seeded_data.limit_ids:
-            try:
-                self.client.delete_item('insurance_dcm_limit', limit_id)
-                print(f"  ✓ Deleted limit: {limit_id}")
-            except Exception as e:
-                print(f"  ✗ Failed to delete limit {limit_id}: {e}")
-
-        for condition_id in seeded_data.condition_ids:
-            try:
-                self.client.delete_item('insurance_dcm_condition', condition_id)
-                print(f"  ✓ Deleted condition: {condition_id}")
-            except Exception as e:
-                print(f"  ✗ Failed to delete condition {condition_id}: {e}")
-
-        for benefit_id in seeded_data.benefit_ids:
-            try:
-                self.client.delete_item('insurance_dcm_benefit', benefit_id)
-                print(f"  ✓ Deleted benefit: {benefit_id}")
-            except Exception as e:
-                print(f"  ✗ Failed to delete benefit {benefit_id}: {e}")
-
-        for segment_id in seeded_data.segment_ids:
-            try:
-                self.client.delete_item('insurance_dcm_segment', segment_id)
-                print(f"  ✓ Deleted segment: {segment_id}")
-            except Exception as e:
-                print(f"  ✗ Failed to delete segment {segment_id}: {e}")
-
-        # Note: We don't delete the dcm_product as it was provided by the user
-        if seeded_data.product_ids:
-            print(f"  ℹ Skipping deletion of existing dcm_product(s): {', '.join(seeded_data.product_ids)}")
-            print("    (Product was not created by this script)")
-
-        # Remove the seeded data file
+        # Verify the product exists
         try:
-            os.remove(seeded_data_file)
-            print(f"✓ Removed seeded data tracking file: {seeded_data_file}")
-        except FileNotFoundError:
-            pass
+            product_items = self.client.get_items('dcm_product', {'filter[id][_eq]': product_id})
+            if not product_items:
+                print(f"Error: Product with ID {product_id} not found")
+                return False
+            print(f"✓ Found product: {product_items[0].get('product_name', product_id)}")
+        except Exception as e:
+            print(f"Error fetching product: {e}")
+            return False
 
-        print("✓ Cleanup completed!")
+        # Query and delete in reverse dependency order to respect foreign key constraints
+        deletion_stats = {
+            'exclusions': 0,
+            'limits': 0,
+            'conditions': 0,
+            'benefits': 0,
+            'segments': 0,
+            'product': 0
+        }
+
+        # 1. Delete exclusions (no dependencies)
+        print("\n1. Deleting exclusions...")
+        try:
+            exclusions = self.client.get_items('insurance_dcm_exclusion', {'filter[dcm_product][_eq]': product_id})
+            for exclusion in exclusions:
+                try:
+                    self.client.delete_item('insurance_dcm_exclusion', exclusion['id'])
+                    deletion_stats['exclusions'] += 1
+                    print(f"  ✓ Deleted exclusion: {exclusion.get('exclusion_name', exclusion['id'])}")
+                except Exception as e:
+                    print(f"  ✗ Failed to delete exclusion {exclusion['id']}: {e}")
+        except Exception as e:
+            print(f"Error fetching exclusions: {e}")
+
+        # 2. Delete limits (no dependencies)
+        print("\n2. Deleting limits...")
+        try:
+            limits = self.client.get_items('insurance_dcm_limit', {'filter[dcm_product][_eq]': product_id})
+            for limit in limits:
+                try:
+                    self.client.delete_item('insurance_dcm_limit', limit['id'])
+                    deletion_stats['limits'] += 1
+                    print(f"  ✓ Deleted limit: {limit.get('limit_name', limit['id'])}")
+                except Exception as e:
+                    print(f"  ✗ Failed to delete limit {limit['id']}: {e}")
+        except Exception as e:
+            print(f"Error fetching limits: {e}")
+
+        # 3. Delete conditions (no dependencies)
+        print("\n3. Deleting conditions...")
+        try:
+            conditions = self.client.get_items('insurance_dcm_condition', {'filter[dcm_product][_eq]': product_id})
+            for condition in conditions:
+                try:
+                    self.client.delete_item('insurance_dcm_condition', condition['id'])
+                    deletion_stats['conditions'] += 1
+                    print(f"  ✓ Deleted condition: {condition.get('condition_name', condition['id'])}")
+                except Exception as e:
+                    print(f"  ✗ Failed to delete condition {condition['id']}: {e}")
+        except Exception as e:
+            print(f"Error fetching conditions: {e}")
+
+        # 4. Delete benefits (depends on limits/conditions/exclusions)
+        print("\n4. Deleting benefits...")
+        try:
+            # Get benefits via segments
+            segments = self.client.get_items('insurance_dcm_segment', {'filter[dcm_product][_eq]': product_id})
+            for segment in segments:
+                segment_benefits = self.client.get_items('insurance_dcm_benefit', {'filter[insurance_dcm_segment][_eq]': segment['id']})
+                for benefit in segment_benefits:
+                    try:
+                        self.client.delete_item('insurance_dcm_benefit', benefit['id'])
+                        deletion_stats['benefits'] += 1
+                        print(f"  ✓ Deleted benefit: {benefit.get('benefit_name', benefit['id'])}")
+                    except Exception as e:
+                        print(f"  ✗ Failed to delete benefit {benefit['id']}: {e}")
+        except Exception as e:
+            print(f"Error fetching/deleting benefits: {e}")
+
+        # 5. Delete segments (depends on benefits)
+        print("\n5. Deleting segments...")
+        try:
+            segments = self.client.get_items('insurance_dcm_segment', {'filter[dcm_product][_eq]': product_id})
+            for segment in segments:
+                try:
+                    self.client.delete_item('insurance_dcm_segment', segment['id'])
+                    deletion_stats['segments'] += 1
+                    print(f"  ✓ Deleted segment: {segment.get('segment_name', segment['id'])}")
+                except Exception as e:
+                    print(f"  ✗ Failed to delete segment {segment['id']}: {e}")
+        except Exception as e:
+            print(f"Error fetching/deleting segments: {e}")
+
+        # 6. Delete the product (depends on segments)
+        print(f"\n6. Deleting product {product_id}...")
+        try:
+            self.client.delete_item('dcm_product', product_id)
+            deletion_stats['product'] = 1
+            print(f"  ✓ Deleted product: {product_id}")
+        except Exception as e:
+            print(f"  ✗ Failed to delete product {product_id}: {e}")
+
+        # Summary
+        print(f"\n✓ Cleanup completed!")
+        print("Summary:")
+        print(f"- Exclusions: {deletion_stats['exclusions']} deleted")
+        print(f"- Limits: {deletion_stats['limits']} deleted")
+        print(f"- Conditions: {deletion_stats['conditions']} deleted")
+        print(f"- Benefits: {deletion_stats['benefits']} deleted")
+        print(f"- Segments: {deletion_stats['segments']} deleted")
+        print(f"- Product: {deletion_stats['product']} deleted")
+
+        total_deleted = sum(deletion_stats.values())
+        print(f"- Total items: {total_deleted} deleted")
+
+        return True
 
 
 def load_analysis_results(file_path: str) -> Dict[str, Any]:
@@ -688,10 +678,13 @@ def seed_to_directus(analysis_results: Dict[str, Any], product_id: str, dry_run:
         return False
 
 
-def cleanup_seeded_data() -> bool:
+def cleanup_seeded_data(product_id: str) -> bool:
     """
-    Clean up previously seeded data from Directus.
+    Clean up all data associated with a dcm_product from Directus.
     
+    Args:
+        product_id: The dcm_product UUID to clean up all associated data for
+        
     Returns:
         bool: True if cleanup was successful, False otherwise
     """
@@ -711,8 +704,7 @@ def cleanup_seeded_data() -> bool:
     seeder = DirectusSeeder(client, dry_run=False)
 
     try:
-        seeder.cleanup_seeded_data()
-        return True
+        return seeder.cleanup_by_product_id(product_id)
     except Exception as e:
         print(f"Error during cleanup: {e}")
         return False
