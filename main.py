@@ -181,7 +181,8 @@ class DocumentAnalyzer:
                  segment_chunk_size: int = 8,
                  benefit_chunk_size: int = 8,
                  detail_chunk_size: int = 3,
-                 debug_mode: bool = False):
+                 debug_mode: bool = False,
+                 dcm_id: str = None):
         """
         Initialize DocumentAnalyzer with configurable chunk sizes for each analysis tier.
 
@@ -191,11 +192,13 @@ class DocumentAnalyzer:
             detail_chunk_size: Number of details to process in parallel per chunk (default: 3).
                               Smaller default for details due to token-heavy responses.
             debug_mode: Enable debug mode for saving/loading intermediate results.
+            dcm_id: Domain Context Model ID for GraphQL taxonomy queries.
         """
         self.segment_chunk_size = segment_chunk_size
         self.benefit_chunk_size = benefit_chunk_size
         self.detail_chunk_size = detail_chunk_size
         self.debug_mode = debug_mode
+        self.dcm_id = dcm_id
         
         self.base_system_prompt = """You are an expert for analysing insurance documents.
                         Your job is to extract relevant information from the document in a structured json format.
@@ -228,7 +231,7 @@ class DocumentAnalyzer:
         self.segment_chains = {}
         self.benefits = {}  # Dict[segment_name, List[benefit_dict]]
         self.benefit_chains = {}
-        self.details = {  # Dict[benefit_key, Dict[detail_type, List[detail_dict]]
+        self.details = {  # Dict[benefit_key, Dict[detail_type, List[detail_dict]
             'limits': {},
             'conditions': {},
             'exclusions': {}
@@ -242,8 +245,8 @@ class DocumentAnalyzer:
         with open("graphql/GetCompleteTaxonomyHierarchy.graphql") as f:
             query = f.read()
 
-        # Variables for the query
-        variables = {"dcm_id": "d427fe94-fc61-4269-8584-78556a36758c"}
+        # Variables for the query - use the dcm_id from initialization
+        variables = {"dcm_id": self.dcm_id}
 
         # Execute the query
         result = self.graphql_client.execute(gql(query), variable_values=variables)
@@ -908,6 +911,196 @@ Always set item_name to: "{detail_info['name']}"
             print(f"Error analyzing document {document_name}: {e}")
             raise e
 
+    async def analyze_document_text(self, document_text: str, document_name: str) -> Dict:
+        """Analyze document text directly for all segments and benefits in parallel with debug support."""
+
+        print(f"=== Analyzing document: {document_name} ===" + (" (Debug Mode)" if self.debug_mode else ""))
+        print(f"Document length: {len(document_text)} characters")
+        print(f"Using chunk sizes: {self.segment_chunk_size} segments, {self.benefit_chunk_size} benefits, {self.detail_chunk_size} details per batch")
+
+        # Prepare chunk size metadata for debug files
+        chunk_sizes = {
+            "segments": self.segment_chunk_size,
+            "benefits": self.benefit_chunk_size,
+            "details": self.detail_chunk_size
+        }
+
+        try:
+            # Step 1: Analyze segments with debug support
+            segment_results = None
+            if self.debug_mode:
+                segment_results, is_valid = load_debug_results(document_name, "segments")
+
+            if segment_results is None:
+                print(f"🚀 Running segment analysis ({len(self.segments)} segments)...")
+                segment_results = await self._analyze_segments_parallel(document_text)
+                
+                if self.debug_mode:
+                    save_debug_results(document_name, "segments", segment_results, chunk_sizes)
+
+            # Print segment summary
+            print(f"\n=== Segment Results Summary for {document_name} ===")
+            included_segments = []
+            for segment_name, result in segment_results.items():
+                status = "✓ INCLUDED" if result.is_included else "✗ NOT FOUND"
+                print(f"  {segment_name}: {status}")
+                if result.is_included:
+                    included_segments.append(segment_name)
+
+            # Step 2: Analyze benefits for included segments
+            benefit_results = {}
+            if included_segments:
+                print(f"\nFound {len(included_segments)} segment(s). Proceeding to benefit analysis...")
+
+                # Setup benefit chains for included segments
+                self.setup_benefit_chains(segment_results)
+
+                # Analyze benefits with debug support
+                if self.benefit_chains:
+                    if self.debug_mode:
+                        benefit_results, is_valid = load_debug_results(document_name, "benefits")
+
+                    if benefit_results is None or not benefit_results:
+                        print(f"🚀 Running benefit analysis ({len(self.benefit_chains)} benefits)...")
+                        benefit_results = await self.analyze_benefits(document_text)
+                        
+                        if self.debug_mode:
+                            save_debug_results(document_name, "benefits", benefit_results, chunk_sizes)
+
+                    # Print benefit summary
+                    print(f"\n=== Benefit Results Summary for {document_name} ===")
+                    included_benefits = []
+                    for benefit_key, result in benefit_results.items():
+                        segment_name = self.benefit_chains[benefit_key]['segment_name']
+                        benefit_name = self.benefit_chains[benefit_key]['benefit_info']['name']
+                        status = "✓ INCLUDED" if result.is_included else "✗ NOT FOUND"
+                        print(f"  {segment_name} → {benefit_name}: {status}")
+                        if result.is_included:
+                            included_benefits.append(benefit_key)
+
+                    # Step 3: Analyze details for included benefits
+                    detail_results = {}
+                    if included_benefits:
+                        print(f"\nFound {len(included_benefits)} benefit(s). Proceeding to detail analysis...")
+
+                        # Setup detail chains for included benefits
+                        self.setup_detail_chains(benefit_results, segment_results)
+
+                        # Analyze details with debug support
+                        if self.detail_chains:
+                            if self.debug_mode:
+                                detail_results, is_valid = load_debug_results(document_name, "details")
+
+                            if detail_results is None or not detail_results:
+                                print(f"🚀 Running detail analysis ({len(self.detail_chains)} details)...")
+                                detail_results = await self.analyze_details(document_text)
+                                
+                                if self.debug_mode:
+                                    save_debug_results(document_name, "details", detail_results, chunk_sizes)
+
+                            # Print detail summary
+                            print(f"\n=== Detail Results Summary for {document_name} ===")
+                            for detail_key, result in detail_results.items():
+                                detail_data = self.detail_chains[detail_key]
+                                segment_name = detail_data['segment_name']
+                                benefit_key = detail_data['benefit_key']
+                                benefit_name = self.benefit_chains[benefit_key]['benefit_info']['name']
+                                detail_type = detail_data['detail_type']
+                                detail_name = detail_data['detail_info']['name']
+                                status = "✓ INCLUDED" if result.is_included else "✗ NOT FOUND"
+                                print(f"  {segment_name} → {benefit_name} → {detail_type}: {detail_name} {status}")
+                        else:
+                            print("No details to analyze for the included benefits.")
+                    else:
+                        print("No benefits found. Skipping detail analysis.")
+                else:
+                    print("No benefits to analyze for the included segments.")
+            else:
+                print("No segments found. Skipping benefit and detail analysis.")
+
+            # Step 4: Build hierarchical tree structure (unchanged)
+            tree_structure = {"segments": []}
+
+            # Process each segment
+            for segment_name, segment_result in segment_results.items():
+                if segment_result.is_included:
+                    # Create segment with its data using taxonomy_item_name as key
+                    segment_item = {
+                        segment_name: {
+                            "item_name": segment_result.item_name,
+                            "is_included": segment_result.is_included,
+                            "section_reference": segment_result.section_reference,
+                            "full_text_part": segment_result.full_text_part,
+                            "llm_summary": segment_result.llm_summary,
+                            "description": segment_result.description,
+                            "unit": segment_result.unit,
+                            "value": segment_result.value,
+                            "benefits": []
+                        }
+                    }
+
+                    # Add benefits for this segment
+                    for benefit_key, benefit_result in benefit_results.items():
+                        if (benefit_result.is_included and 
+                            self.benefit_chains[benefit_key]['segment_name'] == segment_name):
+                            
+                            benefit_name = self.benefit_chains[benefit_key]['benefit_info']['name']
+                            benefit_item = {
+                                benefit_name: {
+                                    "item_name": benefit_result.item_name,
+                                    "is_included": benefit_result.is_included,
+                                    "section_reference": benefit_result.section_reference,
+                                    "full_text_part": benefit_result.full_text_part,
+                                    "llm_summary": benefit_result.llm_summary,
+                                    "description": benefit_result.description,
+                                    "unit": benefit_result.unit,
+                                    "value": benefit_result.value,
+                                    "limits": [],
+                                    "conditions": [],
+                                    "exclusions": []
+                                }
+                            }
+
+                            # Add details (limits, conditions, exclusions) for this benefit
+                            for detail_key, detail_result in detail_results.items():
+                                if detail_key in self.detail_chains:
+                                    detail_data = self.detail_chains[detail_key]
+                                    if (detail_result.is_included and 
+                                        detail_data['benefit_key'] == benefit_key):
+                                        
+                                        detail_type = detail_data['detail_type']
+                                        detail_name = detail_data['detail_info']['name']
+                                        detail_item = {
+                                            detail_name: {
+                                                "item_name": detail_result.item_name,
+                                                "is_included": detail_result.is_included,
+                                                "section_reference": detail_result.section_reference,
+                                                "full_text_part": detail_result.full_text_part,
+                                                "llm_summary": detail_result.llm_summary,
+                                                "description": detail_result.description,
+                                                "unit": detail_result.unit,
+                                                "value": detail_result.value
+                                            }
+                                        }
+
+                                        # Add to appropriate detail category
+                                        if detail_type == "limits":
+                                            benefit_item[benefit_name]["limits"].append(detail_item)
+                                        elif detail_type == "conditions":
+                                            benefit_item[benefit_name]["conditions"].append(detail_item)
+                                        elif detail_type == "exclusions":
+                                            benefit_item[benefit_name]["exclusions"].append(detail_item)
+
+                            segment_item[segment_name]["benefits"].append(benefit_item)
+
+                    tree_structure["segments"].append(segment_item)
+
+            return tree_structure
+
+        except Exception as e:
+            print(f"Error analyzing document {document_name}: {e}")
+            raise e
+
     def export_results(self, results: Dict, document_path: str):
         """Export results to JSON file."""
 
@@ -1007,7 +1200,7 @@ async def main():
     """Main function to handle command line arguments and run analysis."""
 
     parser = argparse.ArgumentParser(description="Analyze insurance documents for segment taxonomy items")
-    parser.add_argument("document_path", help="Path to the insurance document (markdown format)")
+    parser.add_argument("product_id", help="Product ID from Directus to analyze")
     parser.add_argument("--export", "-e", action="store_true", help="Export results to JSON file")
     parser.add_argument("--detailed", "-d", action="store_true", help="Show detailed results")
     parser.add_argument("--no-cache", action="store_true", help="Disable caching for this run")
@@ -1026,8 +1219,6 @@ async def main():
                        help="Force re-run from specific tier (deletes subsequent debug files)")
     parser.add_argument("--seed-directus", action="store_true",
                        help="Seed analysis results to Directus after analysis")
-    parser.add_argument("--product-id",
-                       help="Existing dcm_product ID to seed data under (required with --seed-directus)")
     parser.add_argument("--dry-run-directus", action="store_true",
                        help="Dry run mode for Directus seeding - show what would be inserted")
     parser.add_argument("--cleanup-directus", action="store_true",
@@ -1053,11 +1244,6 @@ async def main():
 
     # Handle Directus cleanup if requested
     if args.cleanup_directus:
-        if not args.product_id:
-            print("Error: --product-id is required when using --cleanup-directus")
-            print("Use: --product-id <dcm-product-id-to-cleanup>")
-            return 1
-
         print("=" * 60)
         print(f"Cleaning up all data for product: {args.product_id}")
         print("=" * 60)
@@ -1070,10 +1256,46 @@ async def main():
             return 1
         return 0
 
-
     try:
-        # Handle debug flags
-        document_name = Path(args.document_path).stem
+        # Fetch product from Directus to get full_text_part and domain_context_model
+        print(f"Fetching product from Directus: {args.product_id}")
+        
+        # Setup Directus client
+        graphql_url = os.getenv('GRAPHQL_URL')
+        auth_token = os.getenv('GRAPHQL_AUTH_TOKEN')
+        if not graphql_url or not auth_token:
+            print("Error: Missing GRAPHQL_URL or GRAPHQL_AUTH_TOKEN environment variables")
+            return 1
+        
+        directus_url = graphql_url.replace('/graphql', '')
+        from directus_seeder import DirectusConfig, DirectusClient
+        config = DirectusConfig(url=directus_url, auth_token=auth_token)
+        client = DirectusClient(config)
+        
+        # Fetch the product
+        product_items = client.get_items('dcm_product', {'filter[id][_eq]': args.product_id})
+        if not product_items:
+            print(f"Error: Product with ID {args.product_id} not found")
+            return 1
+        
+        product = product_items[0]
+        document_text = product.get('full_text_part')
+        if not document_text:
+            print(f"Error: Product {args.product_id} has no full_text_part")
+            return 1
+        
+        dcm_id = product.get('domain_context_model')
+        if not dcm_id:
+            print(f"Error: Product {args.product_id} has no domain_context_model")
+            return 1
+        
+        product_name = product.get('product_name', args.product_id)
+        print(f"✓ Found product: {product_name}")
+        print(f"✓ Using DCM ID: {dcm_id}")
+        print(f"✓ Document text length: {len(document_text)} characters")
+
+        # Handle debug flags - use product_id as document name for debug files
+        document_name = args.product_id
 
         if args.debug_clean:
             print("🗑️  Cleaning all debug files...")
@@ -1088,7 +1310,8 @@ async def main():
             segment_chunk_size=args.segment_chunks,
             benefit_chunk_size=args.benefit_chunks,
             detail_chunk_size=args.detail_chunks,
-            debug_mode=args.debug
+            debug_mode=args.debug,
+            dcm_id=dcm_id  # Pass DCM ID to analyzer
         )
 
         # Fetch taxonomy segments, benefits, and details from GraphQL
@@ -1115,30 +1338,25 @@ async def main():
         # Setup analysis chains
         analyzer.setup_analysis_chains()
 
-        # Analyze the document
-        results = await analyzer.analyze_document(args.document_path)
+        # Analyze the document using the text from Directus
+        results = await analyzer.analyze_document_text(document_text, document_name)
 
         # Export results if requested
         if args.export:
-            analyzer.export_results(results, args.document_path)
+            analyzer.export_results(results, document_name)
 
         # Show detailed results if requested
         if args.detailed:
-            analyzer.print_detailed_results(results, args.document_path)
+            analyzer.print_detailed_results(results, document_name)
 
         # Seed to Directus if requested
         if args.seed_directus:
-            if not args.product_id:
-                print("Error: --product-id is required when using --seed-directus")
-                print("Use: --product-id <your-existing-dcm-product-id>")
-                return 1
-
             print("\n" + "=" * 60)
             print("Seeding results to Directus...")
             print("=" * 60)
 
             # Convert results to the format expected by directus_seeder
-            # The seeder expects a structure like: {document_name: {segments: [...]}}
+            # The seeder expects a structure like: {document_name: {segments: [...]}
             def convert_pydantic_to_dict(obj):
                 """Recursively convert Pydantic models to dictionaries."""
                 if hasattr(obj, 'dict'):  # Pydantic model

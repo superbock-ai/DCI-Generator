@@ -444,9 +444,9 @@ class DirectusSeeder:
             print(f"[DRY RUN] Would use existing dcm_product: {product_id}")
             print("[DRY RUN] Skipping taxonomy mapping fetch")
 
-        # Get the generali data
-        generali_data = analysis_results.get('generali', {})
-        segments_data = generali_data.get('segments', [])
+        # Get the product data
+        product_data = analysis_results.get(product_id, {})
+        segments_data = product_data.get('segments', [])
 
         if not segments_data:
             print("No segments found in analysis results")
