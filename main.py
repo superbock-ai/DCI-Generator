@@ -246,7 +246,7 @@ class AnalysisResult(BaseModel):
     is_included: bool = Field(description="Indicates if the item is included.")
     description: str = Field(description="Description of what this item covers in the language of the input document.")
     unit: str = Field(description="Unit of measurement if applicable (e.g., CHF, days, percentage).")
-    value: str = Field(description="Specific value or amount found in the document.")
+    value: float = Field(description="Specific value or amount found in the document.")
 
 
 class DocumentAnalyzer:
@@ -358,7 +358,7 @@ class DocumentAnalyzer:
     Always set item_name to: "{segment_info['name']}"
 Set description to: A brief description of what this segment covers
 Set unit to: "N/A" (segments typically don't have units)
-Set value to: "N/A" (segments are coverage areas, not specific values)
+Set value to: 0.0 (segments are coverage areas, not specific values)
     """),
             ("human", "Document to analyze:\n\n{document_text}")
         ])
@@ -459,7 +459,8 @@ If you find this {detail_type}:
 If the {detail_type} is not mentioned or doesn't apply:
 - Set is_included to false
 - Provide a brief explanation in the summary
-- Use "N/A" for section_reference, full_text_part, description, unit, and value
+- Use "N/A" for section_reference, full_text_part, description, and unit
+- Use 0.0 for value
 
 Always set item_name to: "{detail_info['name']}"
 """),
@@ -1114,7 +1115,7 @@ Always set item_name to: "{detail_info['name']}"
                     print(f"Description: {segment_data.get('description', 'N/A')}")
                     print(f"Summary: {segment_data.get('llm_summary', 'N/A')}")
                     print(f"Unit: {segment_data.get('unit', 'N/A')}")
-                    print(f"Value: {segment_data.get('value', 'N/A')}")
+                    print(f"Value: {segment_data.get('value', '0.0')}")
                     
                     full_text = segment_data.get('full_text_part', 'N/A')
                     if segment_data.get('is_included', False) and full_text != "N/A":
@@ -1132,8 +1133,8 @@ Always set item_name to: "{detail_info['name']}"
                                 print(f"  Description: {benefit_data.get('description', 'N/A')}")
                                 print(f"  Summary: {benefit_data.get('llm_summary', 'N/A')}")
                                 print(f"  Unit: {benefit_data.get('unit', 'N/A')}")
-                                print(f"  Value: {benefit_data.get('value', 'N/A')}")
-                                
+                                print(f"  Value: {benefit_data.get('value', 0.0)}")
+
                                 full_text = benefit_data.get('full_text_part', 'N/A')
                                 if benefit_data.get('is_included', False) and full_text != "N/A":
                                     print(f"  Full Text (first 300 chars): {full_text[:300]}...")
@@ -1151,8 +1152,8 @@ Always set item_name to: "{detail_info['name']}"
                                                 print(f"    Description: {detail_data.get('description', 'N/A')}")
                                                 print(f"    Summary: {detail_data.get('llm_summary', 'N/A')}")
                                                 print(f"    Unit: {detail_data.get('unit', 'N/A')}")
-                                                print(f"    Value: {detail_data.get('value', 'N/A')}")
-                                                
+                                                print(f"    Value: {detail_data.get('value', 0.0)}")
+
                                                 full_text = detail_data.get('full_text_part', 'N/A')
                                                 if detail_data.get('is_included', False) and full_text != "N/A":
                                                     print(f"    Full Text (first 200 chars): {full_text[:200]}...")
