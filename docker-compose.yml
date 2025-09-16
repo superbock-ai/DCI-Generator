@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   redis:
     image: redis:7-alpine
@@ -39,6 +37,27 @@ services:
       - dci-network
     restart: unless-stopped
     scale: 2  # Run 2 worker instances by default
+
+  broker:
+    build:
+      context: .
+      dockerfile: broker/Dockerfile
+    image: dci-broker
+    container_name: dci-broker
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    networks:
+      - dci-network
+    restart: unless-stopped
 
 volumes:
   redis_data:

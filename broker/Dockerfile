@@ -1,4 +1,4 @@
-# Multi-stage build for optimized container size
+# Multi-stage build for FastAPI broker
 FROM python:3.12-slim AS builder
 
 # Install uv
@@ -30,28 +30,31 @@ COPY --from=builder /app/.venv /app/.venv
 COPY pyproject.toml ./
 COPY uv.lock ./
 
-# Copy worker application code directly to /app
-COPY worker/worker_main.py ./
-COPY worker/directus_tools.py ./
-COPY worker/celery_app.py ./
-COPY worker/tasks.py ./
-COPY worker/worker.py ./
-COPY worker/debug/ ./debug/
-COPY worker/exports/ ./exports/
-COPY worker/graphql/ ./graphql/
+# Copy broker application code
+COPY broker/main.py ./
+
+# Copy worker tasks for Celery integration
+COPY worker/celery_app.py ./worker/celery_app.py
+COPY worker/tasks.py ./worker/tasks.py
+COPY worker/worker_main.py ./worker/worker_main.py
+COPY worker/directus_tools.py ./worker/directus_tools.py
+COPY worker/graphql/ ./worker/graphql/
 
 # Ensure the virtual environment is in PATH
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Create non-root user for security
-RUN groupadd --gid 1000 worker && \
-    useradd --uid 1000 --gid worker --shell /bin/bash --create-home worker
+RUN groupadd --gid 1000 broker && \
+    useradd --uid 1000 --gid broker --shell /bin/bash --create-home broker
 
 # Change ownership of app directory
-RUN chown -R worker:worker /app
+RUN chown -R broker:broker /app
 
 # Switch to non-root user
-USER worker
+USER broker
 
-# Set default command to run Celery worker
-CMD ["python", "worker.py"]
+# Expose port
+EXPOSE 8000
+
+# Set default command to run FastAPI with uvicorn
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

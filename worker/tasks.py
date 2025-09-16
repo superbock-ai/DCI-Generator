@@ -6,7 +6,7 @@ import os
 import asyncio
 from typing import Dict, Any, Optional
 from celery_app import app
-from main import DocumentAnalyzer, convert_pydantic_to_dict, seed_to_directus, cleanup_seeded_data
+from worker_main import DocumentAnalyzer, convert_pydantic_to_dict, seed_to_directus, cleanup_seeded_data
 from directus_tools import DirectusConfig, DirectusClient
 
 
@@ -109,12 +109,12 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
         if debug_clean:
             print("🗑️ Cleaning all debug files...")
             # Import the clean_debug_files function from main
-            from main import clean_debug_files
+            from worker_main import clean_debug_files
             clean_debug_files(document_name)
 
         if debug_from:
             print(f"🔄 Cleaning debug files from {debug_from} onwards...")
-            from main import clean_debug_files
+            from worker_main import clean_debug_files
             clean_debug_files(document_name, debug_from)
 
         # Disable cache if requested
