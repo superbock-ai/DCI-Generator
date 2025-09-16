@@ -33,6 +33,9 @@ COPY uv.lock ./
 # Copy worker application code directly to /app
 COPY worker/main.py ./
 COPY worker/directus_tools.py ./
+COPY worker/celery_app.py ./
+COPY worker/tasks.py ./
+COPY worker/worker.py ./
 COPY worker/debug/ ./debug/
 COPY worker/exports/ ./exports/
 COPY worker/graphql/ ./graphql/

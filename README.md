@@ -1,6 +1,6 @@
-# DCI Generator - Insurance Document Analysis Tool
+# DCI Generator - Scalable Insurance Document Analysis Platform
 
-A comprehensive AI-powered tool for analyzing insurance documents using a three-tier hierarchical approach: **Segments** → **Benefits** → **Details** (limits/conditions/exclusions).
+A production-ready, containerized AI platform for analyzing insurance documents using a three-tier hierarchical approach: **Segments** → **Benefits** → **Details** (limits/conditions/exclusions). Built with Celery workers, Redis queue, and Docker orchestration for scalable processing.
 
 ## 🔍 Overview
 
@@ -20,7 +20,9 @@ The DCI (Domain Context Item) Generator performs intelligent, context-aware anal
 - **Live GraphQL integration** - Real-time taxonomy data from Quinsights platform
 - **Hierarchical tree output** - Natural taxonomy structure with nested relationships
 
-### Advanced Features
+### Production Features
+- **Containerized Architecture** - Docker Compose orchestration with Redis + Celery workers
+- **Scalable Processing** - Horizontal scaling with multiple worker instances
 - **Full document analysis** - Not limited to specific sections
 - **German insurance expertise** - Specialized prompts for German AVB documents
 - **Flexible export options** - JSON export and detailed console output
@@ -31,107 +33,181 @@ The DCI (Domain Context Item) Generator performs intelligent, context-aware anal
 - **Debug mode with auto-resume** - Save progress and resume from failures
 - **Token-aware processing** - Handles OpenAI response length limits
 - **Robust error handling** - Retry logic and graceful failure recovery
+- **Task Queue Management** - Redis-backed job queuing with progress tracking
 
 ## ⚙️ Requirements
 
-- Python 3.12+
-- OpenAI API access
-- Quinsights GraphQL endpoint access
-- `uv` package manager
+- **Docker & Docker Compose** - Container orchestration
+- **Python 3.12+** - For local development
+- **OpenAI API access** - For AI document analysis
+- **Quinsights GraphQL endpoint access** - For taxonomy data
+- **uv package manager** - For dependency management
 
-## 🛠️ Installation
+## 🛠️ Installation & Setup
 
-1. **Clone and setup**:
-   ```bash
-   cd dci_generator
-   uv sync
-   ```
+### 1. **Clone and Configure**
+```bash
+cd dci_generator
+cp .env.example .env
+# Edit .env with your credentials
+```
 
-2. **Configure environment**:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your credentials
-   ```
+### 2. **Required Environment Variables**
+```env
+# OpenAI Configuration
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=gpt-4o-mini
 
-3. **Required environment variables**:
-   ```env
-   OPENAI_API_KEY=your-openai-api-key
-   GRAPHQL_AUTH_TOKEN=your-graphql-token  # Used for both GraphQL and Directus
-   OPENAI_MODEL=gpt-4o-mini  # optional
-   GRAPHQL_URL=https://app-uat.quinsights.tech/graphql  # optional, also used for Directus API
-   ```
+# Directus Configuration
+DIRECTUS_URL=https://app-uat.quinsights.tech
+DIRECTUS_AUTH_TOKEN=your-directus-auth-token
+
+# Redis/Celery Configuration
+REDIS_URL=redis://localhost:6379/0
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
+
+# JWT Authentication (for FastAPI)
+DIRECTUS_SECRET=your-directus-secret-for-jwt-validation
+```
+
+### 3. **Start the Platform**
+```bash
+# Start Redis + Celery Workers
+docker compose up -d
+
+# Check service status
+docker compose ps
+
+# View worker logs
+docker compose logs -f worker
+```
 
 ## 🎯 Usage
 
-### Basic Analysis
-```bash
-uv run main.py travel-insurance/markdown/axa.md
+The platform now operates as a **distributed task queue system**. Submit analysis jobs that are processed by Celery workers.
+
+### Task Submission (Python Script)
+
+```python
+# Add worker directory to path
+import sys
+sys.path.insert(0, 'worker')
+from tasks import analyze_document_task, cleanup_product_task
+
+# Submit analysis task
+result = analyze_document_task.delay(
+    product_id="2258e45a-531e-4412-ab47-3c6bd96eed8a",
+    export=True,
+    debug=True,
+    segment_chunks=5,
+    benefit_chunks=4,
+    detail_chunks=2,
+    seed_directus=False
+)
+
+print(f"Task ID: {result.id}")
+print(f"Status: {result.status}")
+
+# Monitor progress
+while result.status == 'PENDING':
+    time.sleep(5)
+    print(f"Current status: {result.status}")
+
+# Get results
+if result.status == 'SUCCESS':
+    results = result.result
+    print(f"Analysis completed: {results}")
 ```
 
-### With Options
-```bash
-# Export results to JSON
-uv run main.py travel-insurance/markdown/axa.md --export
+### Analysis Task Parameters
 
-# Show detailed analysis
-uv run main.py travel-insurance/markdown/axa.md --detailed
-
-# Disable caching for fresh results
-uv run main.py travel-insurance/markdown/axa.md --no-cache
-
-# All options combined
-uv run main.py travel-insurance/markdown/axa.md --export --detailed --no-cache
+```python
+analyze_document_task.delay(
+    product_id="uuid-string",          # Required: Product ID from Directus
+    export=False,                      # Export results to JSON
+    detailed=False,                    # Show detailed console output
+    no_cache=False,                    # Disable LLM caching
+    segment_chunks=8,                  # Segments per parallel chunk
+    benefit_chunks=8,                  # Benefits per parallel chunk
+    detail_chunks=3,                   # Details per parallel chunk
+    debug=False,                       # Enable debug mode & file saving
+    debug_clean=False,                 # Clean debug files before run
+    debug_from=None,                   # Force re-run from tier ('segments'|'benefits'|'details')
+    seed_directus=False,               # Seed results to Directus
+    dry_run_directus=False            # Dry run seeding (show what would be inserted)
+)
 ```
 
-### Chunk Size Configuration
-```bash
-# Default chunk sizes (8 segments, 8 benefits, 3 details)
-uv run main.py document.md
+### Cleanup Task
 
-# Conservative for reliability
-uv run main.py document.md --segment-chunks 5 --benefit-chunks 4 --detail-chunks 2
-
-# Aggressive for speed
-uv run main.py document.md --segment-chunks 15 --benefit-chunks 12 --detail-chunks 5
-
-# Token-safe for large responses
-uv run main.py document.md --detail-chunks 1
+```python
+# Clean up previously seeded data
+cleanup_result = cleanup_product_task.delay("product-uuid")
 ```
 
-### Debug Mode & Auto-Resume
+### Direct CLI (Legacy Mode)
+
+For development and testing, the original CLI is still available:
+
 ```bash
-# Enable debug mode (saves intermediate results)
-uv run main.py document.md --debug
-
-# Clean all debug files and start fresh
-uv run main.py document.md --debug --debug-clean
-
-# Force re-run from specific tier onwards
-uv run main.py document.md --debug --debug-from benefits
-
-# Ideal for token limit issues - resume with smaller chunks
-uv run main.py document.md --debug --detail-chunks 1
+# Direct CLI usage (not recommended for production)
+uv run worker/main.py 2258e45a-531e-4412-ab47-3c6bd96eed8a --export --debug
 ```
 
-### Directus Integration
+## 🚀 Production Operations
+
+### Scaling Workers
 ```bash
-# Analyze and seed to Directus in one step
-uv run main.py document.md --export --debug --seed-directus --product-id 92f3ee1b-9b03-4085-ab01-555cd9b0507c
+# Scale to 4 worker instances
+docker compose up -d --scale worker=4
 
-# Test seeding with dry run (shows what would be inserted)
-uv run main.py document.md --seed-directus --product-id 92f3ee1b-9b03-4085-ab01-555cd9b0507c --dry-run-directus
+# Check running workers
+docker compose ps
 
-# Seed from existing debug files (with debug mode, uses cached analysis)
-uv run main.py document.md --debug --seed-directus --product-id 92f3ee1b-9b03-4085-ab01-555cd9b0507c
-
-# Clean up ALL data for a product (including the product itself)
-uv run main.py document.md --cleanup-directus --product-id 92f3ee1b-9b03-4085-ab01-555cd9b0507c
+# View logs from all workers
+docker compose logs -f worker
 ```
 
-### Available Documents
-The system includes sample documents from major Swiss insurers:
-- `allianz.md`, `axa.md`, `css.md`, `erv.md`
-- `generali.md`, `mobiliar.md`, `swica.md`, `zurich.md`
+### Service Management
+```bash
+# Stop all services
+docker compose down
+
+# Restart specific service
+docker compose restart worker
+
+# View Redis logs
+docker compose logs redis
+
+# Execute commands in running container
+docker compose exec worker python -c "print('Worker is running')"
+```
+
+### Monitoring & Debugging
+```bash
+# Check Redis connectivity
+python validate_redis.py
+
+# Run integration test
+python test_integration.py
+
+# Monitor worker performance
+docker compose exec worker celery -A celery_app inspect stats
+
+# Check Redis queue status
+docker compose exec redis redis-cli LLEN celery
+```
+
+### Volume Management
+- **Debug files**: `./worker/debug/` → `/app/debug/`
+- **Export files**: `./worker/exports/` → `/app/exports/`
+- **Redis data**: Persistent volume `redis_data`
+
+### Sample Product IDs
+Test the system with these verified product IDs:
+- `2258e45a-531e-4412-ab47-3c6bd96eed8a` - Zurich Reiseversicherung
+- Add your own product IDs from Directus
 
 ## 📊 Analysis Flow
 
