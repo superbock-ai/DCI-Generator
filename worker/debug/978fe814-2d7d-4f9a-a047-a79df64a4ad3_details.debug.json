@@ -1,0 +1,280 @@
+{
+  "tier": "details",
+  "chunk_sizes": {
+    "segments": 8,
+    "benefits": 8,
+    "details": 8
+  },
+  "results": {
+    "medical_personal_assistance_telephone_costs_limits_maximum_coverage_amount": {
+      "section_reference": "Teil B, B2 Finanzielle Obergrenze im Schadenfall",
+      "full_text_part": "B2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.",
+      "llm_summary": "Allgemeine finanzielle Obergrenze: Sämtliche Leistungen der AXA sind pro Schadenfall auf maximal CHF 1 000 000.- begrenzt. Diese Obergrenze gilt allgemein für alle versicherten Leistungen und somit auch für die Erstattung der effektiven Kosten zur Vornahme der Schadenmeldung (Telefon-/Kommunikationskosten) nach A6, welche zusätzlich selbst auf CHF 100.- pro Ereignis begrenzt sind.",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Maximale Gesamtdeckung aller AXA-Leistungen pro Schadenfall; beschränkt somit auch die Gesamthöhe, die für einzelne Leistungen (z. B. Telefonkosten) im Rahmen eines Schadenfalls ausbezahlt werden kann. (Neben dieser Obergrenze gilt für die Telefon-/Kommunikationskosten eine spezifische Begrenzung von CHF 100.- pro Ereignis, A6.)",
+      "unit": "CHF",
+      "value": 1000000.0
+    },
+    "medical_personal_assistance_accommodation_costs_limits_maximum_coverage_amount": {
+      "section_reference": "Teil B, B2 Finanzielle Obergrenze im Schadenfall",
+      "full_text_part": "B2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.",
+      "llm_summary": "In Teil B, Ziffer B2 ist eine allgemeine finanzielle Obergrenze festgelegt: Die Gesamtleistungen der AXA sind pro Schadenfall auf maximal CHF 1'000'000 begrenzt. Diese Obergrenze gilt über alle versicherten Module/Leistungen hinweg und beschränkt somit auch kumulierte Zahlungen für einzelne Leistungsarten wie Unterkunfts- und Verpflegungsmehrkosten (die daneben eigene per‑Person‑Limits, z. B. CHF 1'000, haben).",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Allgemeine, vertragliche Höchstgrenze für die von der AXA zu erbringenden Leistungen pro Schadenfall. Diese Beschränkung begrenzt die kumulierten Auszahlungen der AXA (unabhängig von einzelnen Leistungsuntergrenzen) und gilt somit auch für die Unterkunfts‑ und Verpflegungsmehrkosten (zusätzlich zu deren spezifischen Per‑Person‑Limit von CHF 1'000, siehe D3.1.6 / D3.2.2 / D3.3.2 / D3.4.2 / D3.5.1 und E5.8).",
+      "unit": "CHF",
+      "value": 1000000.0
+    },
+    "medical_personal_assistance_accommodation_costs_limits_daily_maximum": {
+      "section_reference": "N/A",
+      "full_text_part": "N/A",
+      "llm_summary": "Im vorliegenden AVB-Dokument wird kein Tageslimit (z. B. 'pro Tag', 'Tageslimit', 'Täglicher Höchstbetrag') für die Unterkunfts- und Verpflegungsmehrkosten genannt. Die Regelungen zu Unterkunfts- und Verpflegungsmehrkosten sehen pauschale Höchstbeträge pro versicherte Person und pro Ereignis vor (z. B. 'bis maximal CHF 1000.- pro versicherte Person' in D3.1.6, D3.2.2, D3.3.2, D3.4.2, D3.5.1). Zusätzlich gilt die finanzielle Obergrenze von CHF 1'000'000.- pro Schadenfall (B2). Daraus folgt, dass kein separater 'daily_maximum' (täglicher Höchstbetrag in CHF pro Tag) im Dokument enthalten ist und somit nicht auf die Leistung angewendet wird.",
+      "item_name": "daily_maximum",
+      "is_included": false,
+      "description": "N/A",
+      "unit": "N/A",
+      "value": 0.0
+    },
+    "medical_personal_assistance_search_rescue_services_limits_maximum_coverage_amount": {
+      "section_reference": "Teil B, B2 Finanzielle Obergrenze im Schadenfall",
+      "full_text_part": "B2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.",
+      "llm_summary": "In B2 wird eine finanzielle Obergrenze festgelegt: Sämtliche Leistungen der AXA sind pro Schadenfall auf maximal CHF 1'000'000.- begrenzt. Diese Begrenzung gilt gesamthaft für alle versicherten Leistungen und somit auch für Such- und Rettungseinsätze im Rahmen der Personen- und Fahrzeugassistance.",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Gibt die maximale Gesamthöhe der von der AXA pro Schadenfall zu vergütenden Leistungen an. Diese Obergrenze gilt gesamthaft für alle Leistungen (inkl. Such- und Rettungskosten) und limitiert die Auszahlung auf CHF 1'000'000.- pro Schadenfall.",
+      "unit": "CHF",
+      "value": 1000000.0
+    },
+    "medical_personal_assistance_epidemic_pandemic_coverage_limits_maximum_coverage_amount": {
+      "section_reference": "Teil B, B2 Finanzielle Obergrenze im Schadenfall",
+      "full_text_part": "B2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.",
+      "llm_summary": "In B2 ist eine pauschale finanzielle Obergrenze festgelegt: Die gesamten von der AXA erbrachten Leistungen sind pro Schadenfall auf maximal CHF 1'000'000.- begrenzt. Diese Obergrenze gilt gesamthaft und damit auch für Schadenfälle im Zusammenhang mit Epidemien/Pandemien, ergänzt jedoch nicht die spezielleren, in den Leistungsbeschreibungen für einzelne Bausteine genannten Limits (z. B. CHF 10'000.- bei Annullationen während Pandemie oder CHF 1'000.- für bestimmte Assistance-Mehrkosten).",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Gesamtobergrenze der von der AXA pro Schadenfall ausbezahlten Leistungen (alle Versicherungsbausteine zusammengenommen). Diese pauschale Höchstgrenze schränkt die Auszahlung auch bei Epidemie-/Pandemie-bezogenen Leistungen ein; parallel dazu können für einzelne Leistungen niedrigere spezifische Limits gelten.",
+      "unit": "CHF",
+      "value": 1000000.0
+    },
+    "medical_personal_assistance_translation_services_limits_maximum_coverage_amount": {
+      "section_reference": "Teil B, B2 Finanzielle Obergrenze im Schadenfall; Teil D, D3.9 Dolmetscherkosten",
+      "full_text_part": "B2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.\n\nD3.9 Dolmetscherkosten\nIm Ausland bezahlt die AXA die notwendigen Kosten für einen anerkannten Dolmetscher bis maximal CHF 500 .- pro versichertes Ereignis.",
+      "llm_summary": "Die AVB nennt in B2 eine finanzielle Obergrenze: Alle Leistungen der AXA sind pro Schadenfall auf maximal CHF 1'000'000.- begrenzt. Für die konkret betrachtete Leistung (Dolmetscherkosten, D3.9) besteht zusätzlich eine spezifische Begrenzung von maximal CHF 500.- pro versichertem Ereignis. Damit gilt die globale Obergrenze von CHF 1'000'000.- auch für Personenassistance-Leistungen, jedoch beschränkt die einzelne Leistung (Dolmetscher) den erstattungsfähigen Betrag auf CHF 500.- pro Ereignis.",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Globale finanzielle Obergrenze der AXA pro Schadenfall: begrenzt sämtliche von der Versicherung erbrachten Leistungen (inkl. Personenassistance). Für die Dolmetscherleistung gilt zusätzlich die spezifische Begrenzung von CHF 500.- pro versichertes Ereignis.",
+      "unit": "CHF",
+      "value": 1000000.0
+    },
+    "medical_personal_assistance_body_repatriation_limits_maximum_coverage_amount": {
+      "section_reference": "Teil B, B2 Finanzielle Obergrenze im Schadenfall",
+      "full_text_part": "B2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.",
+      "llm_summary": "Die AXB legt eine pauschale finanzielle Obergrenze fest: Alle Leistungen der AXA sind pro Schadenfall auf maximal CHF 1'000'000.- begrenzt. Diese Begrenzung gilt gesamthaft und damit auch für Leistungen der Personenassistance, inklusive Bergung und Heimschaffung der Leiche.",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Gesamte Deckungssumme: Alle Leistungen der AXA sind pro Schadenfall auf maximal CHF 1'000'000.- begrenzt; diese Obergrenze gilt auch für die Kosten der Bergung und Heimschaffung der Leiche bzw. alternativ Kremation/Bestattung im Ausland.",
+      "unit": "CHF",
+      "value": 1000000.0
+    },
+    "medical_personal_assistance_medical_repatriation_limits_maximum_coverage_amount": {
+      "section_reference": "Teil B, B2 Finanzielle Obergrenze im Schadenfall",
+      "full_text_part": "B2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.",
+      "llm_summary": "In Teil B, Abschnitt B2 ist eine finanzielle Obergrenze festgelegt: Sämtliche Leistungen der AXA sind pro Schadenfall auf maximal CHF 1'000'000.- begrenzt. Damit unterliegt auch die Deckung für medizinische Rückführungen (medical_repatriation, Teil D3) dieser Gesamtbegrenzung.",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Gesamthöchstbetrag, der die AXA pro Schadenfall maximal auszahlt; gilt als Obergrenze für alle versicherten Leistungen eines Schadenfalls (inkl. medizinischer Rückführungen).",
+      "unit": "CHF",
+      "value": 1000000.0
+    },
+    "medical_personal_assistance_emergency_medical_costs_limits_annual_maximum": {
+      "section_reference": "N/A",
+      "full_text_part": "N/A",
+      "llm_summary": "Es wurde im gesamten Dokument kein ausdrückliches «Jahreslimit» bzw. kein jährlicher Höchstbetrag (z. B. «Jahreslimit», «pro Jahr maximal», «Jährlicher Höchstbetrag») für Leistungen der Personenassistance bzw. speziell für medizinische Notfallkosten genannt. Stattdessen finden sich Einzel- und Ereignisbegrenzungen (z. B. D3.1.10 Kostenvorschuss bis CHF 5'000 pro versicherte Person, D3.1.2/mehrere Abschnitte Transport-/Unterkunftsmehrkosten bis CHF 1'000 pro Person, sowie die finanzielle Obergrenze B2: maximal CHF 1'000'000 pro Schadenfall), aber keine jährliche Deckelung.",
+      "item_name": "annual_maximum",
+      "is_included": false,
+      "description": "N/A",
+      "unit": "N/A",
+      "value": 0.0
+    },
+    "medical_personal_assistance_emergency_medical_costs_limits_deductible": {
+      "section_reference": "N/A",
+      "full_text_part": "N/A",
+      "llm_summary": "Im gesamten Dokument wurden keine Begriffe wie 'Selbstbehalt', 'Franchise', 'Eigenanteil' oder 'Selbstbeteiligung' gefunden. Es ist somit kein vom Versicherten zu zahlender Selbstbehalt für die Personenassistance bzw. die medizinischen Notfallkosten (Teil D, D3) ausgewiesen. Im Dokument sind jedoch verschiedene Leistungshöchstgrenzen und Rückzahlungsfristen genannt (z. B. Kostenvorschuss CHF 5'000, Transport-/Unterkunftsmehrkosten CHF 1'000, finanzielle Obergrenze CHF 1'000'000), die nichts mit einem Selbstbehalt im Sinne eines Eigenanteils verbinden.",
+      "item_name": "deductible",
+      "is_included": false,
+      "description": "N/A",
+      "unit": "N/A",
+      "value": 0.0
+    },
+    "medical_personal_assistance_emergency_medical_costs_limits_maximum_coverage_amount": {
+      "section_reference": "Teil B, B2 Finanzielle Obergrenze im Schadenfall",
+      "full_text_part": "B2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.",
+      "llm_summary": "In Abschnitt B2 ist eine pauschale finanzielle Obergrenze festgelegt: Alle Leistungen der AXA sind pro Schadenfall auf maximal CHF 1'000'000.- begrenzt. Diese Begrenzung gilt als gemeinsame Bedingung und ist somit auch auf Leistungen der Personenassistance (einschliesslich medizinischer Notfälle und Kostenvorschüsse gemäss Teil D, D3) anwendbar.",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Maximaler Gesamtbetrag, den die AXA pro Schadenfall bezahlt. Beschränkt die Summe sämtlicher Versicherungsleistungen (inkl. Leistungen aus der Personenassistance wie Rettung, Transport, Kostenvorschuss) auf CHF 1'000'000.- pro Schadenfall.",
+      "unit": "CHF",
+      "value": 1000000.0
+    },
+    "trip_cancellation_interruption_accommodation_costs_limits_maximum_coverage_amount": {
+      "section_reference": "Teil B: B2 Finanzielle Obergrenze im Schadenfall; Teil D: D3.1.6, D3.2.2, D3.3.2, D3.4.2, D3.5.1; Teil E: E5.8",
+      "full_text_part": "B2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.\n\nD3.1.6 Unterkunfts- und Verpflegungsmehrkosten\nMuss die versicherte Person einen unvorhergesehenen Aufenthalt einlegen oder eine besser geeignete Unterkunft beziehen, bezahlt die AXA die Unterkunfts- und Verpflegungsmehrkosten bis maximal CHF 1000 .- pro versicherte Person. Spitalkosten werden dabei nicht übernommen.\n\nD3.2.2 Unterkunfts- und Verpflegungsmehrkosten\nDie AXA bezahlt die Unterkunfts- und Verpflegungsmehrkosten für einen unvorhergesehenen Aufenthalt bis maximal CHF 1000 .- pro versicherte Person.\n\nD3.3.2 Unterkunfts- und Verpflegungsmehrkosten\nDie AXA bezahlt die Unterkunfts- und Verpflegungsmehrkosten für einen unvorhergesehenen Aufenthalt bis maximal CHF 1000 .- pro versicherte Person.\n\nD3.4.2 Unterkunfts- und Verpflegungsmehrkosten\nDie AXA bezahlt die Unterkunfts- und Verpflegungsmehrkosten für einen unvorhergesehenen Aufenthalt bis maximal CHF 1000 .- pro versicherte Person.\n\nD3.5.1 Unterkunfts- und Verpflegungsmehrkosten\nDie AXA bezahlt die Unterkunfts- und Verpflegungsmehrkosten für einen unvorhergesehenen Aufenthalt bis maximal CHF 1000 .- pro versicherte Person.\n\nE5.8 Unterkunfts- und Verpflegungsmehrkosten\nDie AXA bezahlt die Unterkunfts- und Verpflegungsmehrkosten während der Dauer der Reparatur oder für einen unvorhergesehenen Aufenthalt bis maximal CHF 1000 .- pro versicherte Person.\nWird die versicherte Person verletzt und muss dadurch einen unvorhergesehenen Aufenthalt einschalten oder eine besser geeignete Unterkunft beziehen, bezahlt die AXA die Unterkunfts- und Verpflegungsmehrkosten bis maximal CHF 1000 .- pro versicherte Person. Spitalkosten werden dabei nicht übernommen.",
+      "llm_summary": "Im Dokument finden sich zwei relevante Höchstgrenzen: Auf Policen-/Schadenfall-Ebene sind die Leistungen der AXA gemäss B2 insgesamt auf maximal CHF 1'000'000 pro Schadenfall begrenzt. Speziell für die Unterkunfts- und Verpflegungsmehrkosten (Benefit \"accommodation_costs\") ist in mehreren Abschnitten (D3.1.6, D3.2.2, D3.3.2, D3.4.2, D3.5.1 und E5.8) ein separater Höchstbetrag von maximal CHF 1'000 pro versicherte Person und Ereignis festgelegt.",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Gesamtlimit der AXA-Leistungen pro Schadenfall beträgt CHF 1'000'000 (B2). Zusätzlich gilt für das Benefit Unterkunfts- und Verpflegungsmehrkosten ein spezifischer Höchstbetrag von CHF 1'000 pro versicherte Person und Ereignis (D3.1.6 u.a., E5.8). Spitalkosten sind ausgeschlossen; Leistungen nur bei von/mit AXA organisierten Massnahmen (A6).",
+      "unit": "CHF",
+      "value": 1000000.0
+    },
+    "trip_cancellation_interruption_accommodation_costs_limits_daily_maximum": {
+      "section_reference": "N/A",
+      "full_text_part": "N/A",
+      "llm_summary": "Für die Leistung Unterkunfts- und Verpflegungsmehrkosten (Personenassistance D3.1.6, D3.2.2, D3.3.2, D3.4.2, D3.5.1 und Fahrzeugassistance E5.8) ist im Dokument ein Höchstbetrag von jeweils «bis maximal CHF 1000.- pro versicherte Person» pro Ereignis genannt. Es wird jedoch kein «Tageslimit» oder «täglicher Höchstbetrag» für diese Unterkunfts- und Verpflegungskosten angegeben. (Hinweis: Im Dokument existiert eine separate Regelung für ein Ersatzfahrzeug in E6.1.2 — Maximalbetrag CHF 500 insgesamt für bis zu 5 Tage — dies ist aber nicht auf die Unterkunfts-/Verpflegungskosten anwendbar.)",
+      "item_name": "daily_maximum",
+      "is_included": false,
+      "description": "N/A",
+      "unit": "N/A",
+      "value": 0.0
+    },
+    "trip_cancellation_interruption_trip_interruption_limits_maximum_coverage_amount": {
+      "section_reference": "Teil C: C3.3 und C3.4; Teil B: B2",
+      "full_text_part": "B2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.\n\nC3.3 Leistungsbegrenzung\nPro versichertes Ereignis sind alle Versicherungsleistungen zusammen begrenzt auf den ursprünglich von der versicherten Person bezahlten Preis der Reise oder der Ferien. Die Versicherungsleistungen der AXA pro Ereignis sind auf höchstens CHF 80 000 .- begrenzt. Die Leistungen werden nur für denjenigen Arrangementteil erbracht, den die versicherte Person tatsächlich nutzt.\n\nC3.4 Leistungsbegrenzung bei einer Pandemie\nBei versicherten Ereignissen gemäss C1.7 gelten folgende Leistungsbegrenzungen:\nC3.4.1 Buchungszeitpunkt vor einer Pandemie\n· Pro Police sind maximal 3 Annullationen von Reisen oder Ferien, die vor Ausbruch einer Pandemie gebucht wurden, versichert.\n· Die Versicherungsleistungen der AXA sind begrenzt auf höchstens CHF 10 000 .- pro versichertem Ereignis und versicherter Person.\nC3.4.2 Buchungszeitpunkt während einer Pandemie\n· Bei Reisen oder Ferien, die während einer Pandemie gebucht wurden, ist pro Police maximal ein versicher- tes Ereignis gedeckt.\n· Die Versicherungsleistungen der AXA sind begrenzt auf höchstens CHF 10 000 .- pro versicherter Person.",
+      "llm_summary": "Für die Annullationskosten-/Reiseunterbruchs-Leistungen gilt eine direkte Leistungsbegrenzung in Teil C: Pro versichertem Ereignis sind die Leistungen auf den ursprünglich bezahlten Reisepreis beschränkt; zusätzlich ist die Auszahlung pro Ereignis auf maximal CHF 80 000.- begrenzt (C3.3). Bei Pandemie-Ereignissen gelten strengere Caps: in der Regel höchstens CHF 10 000.- pro versicherter Person und versichertem Ereignis (C3.4) sowie Beschränkungen der Anzahl gedeckter Annullationen pro Police. Darüber hinaus besteht in Teil B (B2) eine generelle finanzielle Obergrenze der AXA von CHF 1 000 000.- pro Schadenfall, die als übergeordnete Begrenzung zu beachten ist.",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Legt die Obergrenzen für die Erstattung von Annullations- bzw. Unterbruchsleistungen fest: standardmässig maximal CHF 80 000.- pro versichertem Ereignis (zuzüglich Beschränkung auf den ursprünglich bezahlten Reisepreis); bei Pandemien reduziert auf CHF 10 000.- pro versicherter Person und Ereignis mit zusätzlichen Beschränkungen der Anzahl gedeckter Annullationen pro Police. Zusätzlich gilt eine allgemeine Obergrenze aller AXA-Leistungen von CHF 1 000 000.- pro Schadenfall.",
+      "unit": "CHF",
+      "value": 80000.0
+    },
+    "trip_cancellation_interruption_pet_coverage_limits_maximum_coverage_amount": {
+      "section_reference": "C3.6; D3.1.2 / D3.2.1 / D3.2.2 / D3.4.1; E2.2; B2; C3.3; C3.4",
+      "full_text_part": "C3.6 Haustiere\nWenn das Haustier der versicherten Person vor Antritt der Reise oder der Ferien nicht bei der vorgesehenen Betreuungsperson platziert werden kann, weil diese verunfallt, erkrankt oder stirbt, bezahlt die AXA die Kosten für ein Tierheim bis maximal CHF 500 .- pro Ereignis.\n\nD3.1.2 Transport- und Transportmehrkosten\n... Ist eine Fortsetzung möglich, bezahlt die AXA die Transportmehrkosten bis maximal CHF 1000 .- pro versicherte Person.\n\nD3.2.1 Transportmehrkosten\nDie AXA bezahlt die Transportmehrkosten für die direkte Rückkehr an die ständige Wohnadresse. Ist danach eine Fortsetzung möglich, bezahlt die AXA die Transportmehrkosten bis maximal CHF 1000 .- pro versicherte Person.\n\nD3.2.2 Unterkunfts- und Verpflegungsmehrkosten\nDie AXA bezahlt die Unterkunfts- und Verpflegungsmehrkosten für einen unvorhergesehenen Aufenthalt bis maximal CHF 1000 .- pro versicherte Person.\n\nD3.4.1 Transportmehrkosten\nDie AXA bezahlt die Transportmehrkosten bis maximal CHF 1000 .- pro versicherte Person.\n\nE2.2 Transport- und Transportmehrkosten sowie Unterkunfts- und Verpflegungsmehrkosten werden auch für mitreisende Personen und Haustiere bezahlt, bis maximal CHF 1000 .- pro Ereignis.\n\nB2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.\n\nC3.3 Leistungsbegrenzung\nPro versichertes Ereignis sind alle Versicherungsleistungen zusammen begrenzt auf den ursprünglich von der versicherten Person bezahlten Preis der Reise oder der Ferien. Die Versicherungsleistungen der AXA pro Ereignis sind auf höchstens CHF 80 000 .- begrenzt.\n\nC3.4 Leistungsbegrenzung bei einer Pandemie\n... Die Versicherungsleistungen der AXA sind begrenzt auf höchstens CHF 10 000 .- pro versichertem Ereignis und versicherter Person. (siehe C3.4.1/C3.4.2)",
+      "llm_summary": "Das Dokument nennt spezifische Höchstbeträge, die für Leistungen im Zusammenhang mit Haustieren gelten: Im Annullationsmodul (C3.6) ersetzt die AXA Tierheim-/Betreuungskosten bis maximal CHF 500 pro Ereignis. In den Assistance-Modulen (D3/... und E2.2) werden Transport- sowie Unterkunfts- und Verpflegungsmehrkosten für mitreisende Personen und Haustiere bis maximal CHF 1000 pro Ereignis/versicherte Person übernommen. Daneben bestehen übergeordnete Begrenzungen: finanzielle Obergrenze pro Schadenfall CHF 1'000'000 (B2), Höchstleistung pro Annullationsereignis CHF 80'000 (C3.3) und bei Pandemien spezielle Limiten (CHF 10'000 pro Person/Ereignis, C3.4).",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Für das Haustier gibt es spezifische Höchstbeträge: In der Annullationskosten-Versicherung (C3.6) werden Tierheim-/Betreuungskosten bis maximal CHF 500 pro Ereignis übernommen. In den Assistance-Leistungen (D3.x und E2.2) werden Transport- sowie Unterkunfts- und Verpflegungsmehrkosten für mitreisende Haustiere (und Personen) bis maximal CHF 1000 pro Ereignis bzw. pro versicherte Person übernommen. Zusätzlich gelten übergeordnete Deckelungen wie CHF 80'000 pro Annullationsereignis (C3.3), CHF 10'000-Beschränkungen bei Pandemien (C3.4) und eine finanzielle Obergrenze von CHF 1'000'000 pro Schadenfall (B2).",
+      "unit": "CHF",
+      "value": 1000.0
+    },
+    "trip_cancellation_interruption_entertainment_tickets_limits_maximum_coverage_amount": {
+      "section_reference": "Teil C: C3.3 Leistungsbegrenzung; C3.4 Leistungsbegrenzung bei einer Pandemie; Teil B: B2 Finanzielle Obergrenze im Schadenfall",
+      "full_text_part": "B2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.\n\nC3.3 Leistungsbegrenzung\nPro versichertes Ereignis sind alle Versicherungsleistungen zusammen begrenzt auf den ursprünglich von der versicherten Person bezahlten Preis der Reise oder der Ferien. Die Versicherungsleistungen der AXA pro Ereignis sind auf höchstens CHF 80 000 .- begrenzt. Die Leistungen werden nur für denjenigen Arrangementteil erbracht, den die versicherte Person tatsächlich nutzt.\n\nC3.4 Leistungsbegrenzung bei einer Pandemie\nBei versicherten Ereignissen gemäss C1.7 gelten folgende Leistungsbegrenzungen:\nC3.4.1 Buchungszeitpunkt vor einer Pandemie\n· Pro Police sind maximal 3 Annullationen von Reisen oder Ferien, die vor Ausbruch einer Pandemie gebucht wurden, versichert.\n· Die Versicherungsleistungen der AXA sind begrenzt auf höchstens CHF 10 000 .- pro versichertem Ereignis und versicherter Person.\nC3.4.2 Buchungszeitpunkt während einer Pandemie\n· Bei Reisen oder Ferien, die während einer Pandemie gebucht wurden, ist pro Police maximal ein versicher- tes Ereignis gedeckt.\n· Die Versicherungsleistungen der AXA sind begrenzt auf höchstens CHF 10 000 .- pro versicherter Person.\n\nHinweis zu C3.7 (Eintrittsbillette)\nC3.7 Eintrittsbillette\nWenn die versicherte Person aufgrund von Unfall, Krankheit oder Tod ein bereits gekauftes Eintrittsbillett für eine Veranstaltung nicht benützen kann und eine Annullation nicht möglich ist, bezahlt die AXA die entsprechenden Billettkosten. Nicht als Eintrittsbillette gelten Wochen-, Saison- oder Jahreskarten jeglicher Art.\n(Anmerkung: Die in C3.7 genannten Leistungen unterliegen den unter C3.3 und gegebenenfalls C3.4 genannten Leistungsbegrenzungen.)",
+      "llm_summary": "Für die Annullationskosten-Versicherung gilt eine generelle Begrenzung: pro versichertes Ereignis sind alle Leistungen auf den ursprünglich bezahlten Reisepreis beschränkt und insgesamt auf höchstens CHF 80'000 pro Ereignis (C3.3). Zusätzlich besteht eine allgemeine finanzielle Obergrenze der AXA von CHF 1'000'000 pro Schadenfall (B2). Bei versicherten Ereignissen im Zusammenhang mit einer Pandemie gelten strengere, personenbezogene Höchstgrenzen (C3.4): typischerweise maximal CHF 10'000 pro versichertem Ereignis und versicherter Person sowie Einschränkungen bezüglich Anzahl gedeckter Annullationen pro Police.",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Maximale Gesamtleistung der AXA pro versichertem Ereignis für die Annullationskosten-Versicherung (und damit auch für die Erstattung von Eintrittsbilletten nach C3.7) ist grundsätzlich auf CHF 80'000 pro Ereignis begrenzt. Zusätzlich gilt eine polizenseitige Obergrenze von CHF 1'000'000 pro Schadenfall (B2). Bei Pandemiefällen gelten besondere, niedrigere Höchstgrenzen: CHF 10'000 pro versichertem Ereignis und versicherter Person sowie Beschränkungen der Anzahl gedeckter Annullationen pro Police (C3.4).",
+      "unit": "CHF",
+      "value": 80000.0
+    },
+    "trip_cancellation_interruption_trip_cancellation_costs_limits_maximum_coverage_amount": {
+      "section_reference": "Teil C Abschnitt C3.3 (Leistungsbegrenzung); Abschnitt C3.4 (Leistungsbegrenzung bei einer Pandemie); Teil B Abschnitt B2 (Finanzielle Obergrenze im Schadenfall)",
+      "full_text_part": "B2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.\n\nC3.3 Leistungsbegrenzung\nPro versichertes Ereignis sind alle Versicherungsleistungen zusammen begrenzt auf den ursprünglich von der versicherten Person bezahlten Preis der Reise oder der Ferien. Die Versicherungsleistungen der AXA pro Ereignis sind auf höchstens CHF 80 000 .- begrenzt. Die Leistungen werden nur für denjenigen Arrangementteil erbracht, den die versicherte Person tatsächlich nutzt.\n\nC3.4 Leistungsbegrenzung bei einer Pandemie\nBei versicherten Ereignissen gemäss C1.7 gelten folgende Leistungsbegrenzungen:\nC3.4.1 Buchungszeitpunkt vor einer Pandemie\n· Pro Police sind maximal 3 Annullationen von Reisen oder Ferien, die vor Ausbruch einer Pandemie gebucht wurden, versichert.\n· Die Versicherungsleistungen der AXA sind begrenzt auf höchstens CHF 10 000 .- pro versichertem Ereignis und versicherter Person.\nC3.4.2 Buchungszeitpunkt während einer Pandemie\n· Bei Reisen oder Ferien, die während einer Pandemie gebucht wurden, ist pro Police maximal ein versichertes Ereignis gedeckt.\n· Die Versicherungsleistungen der AXA sind begrenzt auf höchstens CHF 10 000 .- pro versicherter Person.",
+      "llm_summary": "Die Annullationskosten-Versicherung ist in C3.3 ausdrücklich begrenzt: pro versichertem Ereignis sind die Leistungen auf den ursprünglich bezahlten Reisepreis beschränkt; zusätzlich nennt C3.3 eine Höchstleistung der AXA pro Ereignis von CHF 80 000. Bei Pandemien (C3.4) gelten strengere Limiten: grundsätzlich höchstens CHF 10 000 pro versichertem Ereignis und versicherter Person sowie Beschränkungen der Anzahl gedeckter Annullationen pro Police. Zusätzlich gilt eine allgemeine finanzielle Obergrenze von CHF 1 000 000 pro Schadenfall (B2), die übergeordnet wirken kann.",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Hauptbegrenzung der maximalen Deckung für Annullationskosten: maximal CHF 80'000 pro versichertem Ereignis. Bei Ereignissen im Zusammenhang mit einer Pandemie gelten abweichende (niedrigere) Limiten: maximal CHF 10'000 pro versicherter Person und Ereignis sowie Beschränkungen der Anzahl gedeckter Annullationen pro Police. Zudem gilt eine übergeordnete finanzielle Obergrenze von CHF 1'000'000 pro Schadenfall (Teil B2).",
+      "unit": "CHF",
+      "value": 80000.0
+    },
+    "luggage_travel_delay_travel_delay_limits_daily_maximum": {
+      "section_reference": "N/A",
+      "full_text_part": "N/A",
+      "llm_summary": "Im gesamten Dokument findet sich keine ausdrückliche Angabe eines 'Tageslimits' (z. B. \"pro Tag\", \"Tageslimit\", \"Täglicher Höchstbetrag\") für die unter Personenassistance / Reiseverspätung (Teil D, insbesondere D3.3/D3.4) aufgeführten Leistungen. Die Leistungen bei Ausfall/Verspätung sind jeweils als Maximalbeträge pro versicherte Person und pro Ereignis geregelt (z. B. Transportmehrkosten und Unterkunfts-/Verpflegungsmehrkosten bis maximal CHF 1000.– pro versicherte Person). Die allgemeine finanzielle Obergrenze pro Schadenfall beträgt CHF 1'000'000.– (B2). Im Dokument gibt es jedoch eine tagesbezogene Regelung in Teil E (E6.1.2): Ersatzfahrzeugentschädigung für zusätzliche Tage (max. 5 Tage, Totalbetrag bis CHF 500.–) — diese Regelung gehört zur Fahrzeugassistance und ist nicht auf die Reiseverspätungs-/Personenassistance-Leistungen anwendbar. Folglich existiert kein spezifisches Tagesmaximum, das für das Reiseverspätungs-Benefit (travel_delay) gilt.",
+      "item_name": "daily_maximum",
+      "is_included": false,
+      "description": "N/A",
+      "unit": "N/A",
+      "value": 0.0
+    },
+    "luggage_travel_delay_missed_connection_limits_maximum_coverage_amount": {
+      "section_reference": "Teil B: B2 Finanzielle Obergrenze im Schadenfall",
+      "full_text_part": "B2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.",
+      "llm_summary": "Teil B, Ziffer B2 legt eine finanzielle Obergrenze pro Schadenfall fest: Die AXA-Leistungen sind auf maximal CHF 1'000'000 pro Schadenfall begrenzt.",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Gesamthöchstbetrag, den die AXA pro Schadenfall insgesamt vergütet. Diese Obergrenze gilt für alle versicherten Leistungen zusammen (subsidiär zu spezifischen Leistungslimiten). Sie ist somit auch auf Leistungen im Zusammenhang mit verpasster Anreise/Anschluss (missed_connection) anwendbar, zusätzlich zu etwaigen niedrigeren, in den Leistungsbeschreibungen genannten Einzelgrenzen (z. B. D3.3 Transport- bzw. Unterkunftsmehrkosten bis CHF 1'000 pro versicherte Person; C3.3 Annullationsleistungen pro Ereignis bis CHF 80'000).",
+      "unit": "CHF",
+      "value": 1000000.0
+    },
+    "insolvency_protection_travel_provider_insolvency_limits_insolvency_coverage_limit": {
+      "section_reference": "Teil C: C1.12; C3.3, C3.4 | Teil D: D1.15; D3.2.1, D3.2.2 | Teil B: B2",
+      "full_text_part": "C1.12 Insolvenz des Reiseveranstalters oder Reisedienstleisters\n· Die Reise oder die Ferien können wegen Insolvenz des Reiseveranstalters oder eines Reisedienstleisters nicht angetreten oder nicht wie vorgesehen fortgesetzt werden. Die versicherte Person ist verpflichtet, Kosten- oder Schadenersatz zuerst bei der betreffenden Reiseveranstalterin oder dem Reisedienstleister geltend zu machen.\n· Die AXA erbringt nur Leistungen, soweit die Annullationskosten nicht durch Dritte (z. B. Garantiefonds der Schweizer Reisebranche) übernommen werden (Subsidiärdeckung).\n\nC3.3 Leistungsbegrenzung\nPro versichertes Ereignis sind alle Versicherungsleistungen zusammen begrenzt auf den ursprünglich von der versicherten Person bezahlten Preis der Reise oder der Ferien. Die Versicherungsleistungen der AXA pro Ereignis sind auf höchstens CHF 80 000 .- begrenzt. Die Leistungen werden nur für denjenigen Arrangementteil erbracht, den die versicherte Person tatsächlich nutzt.\n\nC3.4 Leistungsbegrenzung bei einer Pandemie\nBei versicherten Ereignissen gemäss C1.7 gelten folgende Leistungsbegrenzungen:\nC3.4.1 Buchungszeitpunkt vor einer Pandemie\n· Pro Police sind maximal 3 Annullationen von Reisen oder Ferien, die vor Ausbruch einer Pandemie gebucht wurden, versichert.\n· Die Versicherungsleistungen der AXA sind begrenzt auf höchstens CHF 10 000 .- pro versichertem Ereignis und versicherter Person.\nC3.4.2 Buchungszeitpunkt während einer Pandemie\n· Bei Reisen oder Ferien, die während einer Pandemie gebucht wurden, ist pro Police maximal ein versichertes Ereignis gedeckt.\n· Die Versicherungsleistungen der AXA sind begrenzt auf höchstens CHF 10 000 .- pro versicherter Person.\n\nD1.15 Insolvenz des Reiseveranstalters oder des Reisedienstleisters\n· Die Reise oder die Ferien können wegen Insolvenz des Reiseveranstalters oder eines Reisedienstleisters nicht angetreten oder nicht wie vorgesehen fortgesetzt werden.\n· Die versicherte Person ist verpflichtet, Kosten- oder Schadenersatz zuerst bei der betreffenden Reiseveranstalterin oder dem Reisedienstleister geltend zu machen.\n\nD3.2.1 Transportmehrkosten\nDie AXA bezahlt die Transportmehrkosten für die direkte Rückkehr an die ständige Wohnadresse. Ist danach eine Fortsetzung möglich, bezahlt die AXA die Transportmehrkosten bis maximal CHF 1000 .- pro versicherte Person.\n\nD3.2.2 Unterkunfts- und Verpflegungsmehrkosten\nDie AXA bezahlt die Unterkunfts- und Verpflegungsmehrkosten für einen unvorhergesehenen Aufenthalt bis maximal CHF 1000 .- pro versicherte Person.\n\nB2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.",
+      "llm_summary": "Die AVB nennen Insolvenz des Reiseveranstalters / Reisedienstleisters als versichertes Ereignis sowohl in der Annullationskosten-Versicherung (C1.12) als auch in der Personenassistance (D1.15). Für Annullationen gilt eine Leistungsbegrenzung: AXA leistet pro Ereignis höchstens CHF 80'000 (C3.3). Bei pandemiebedingten Fällen gelten reduzierte Höchstgrenzen von CHF 10'000 pro Ereignis/versicherter Person sowie Beschränkungen der Anzahl gedeckter Fälle pro Police (C3.4). In der Personenassistance werden bei Insolvenz konkret Transportmehrkosten und Unterkunfts-/Verpflegungsmehrkosten übernommen, jeweils bis maximal CHF 1'000 pro versicherte Person (D3.2.1/D3.2.2). Zusätzlich besteht eine allgemeine finanzielle Obergrenze von CHF 1'000'000 pro Schadenfall (B2). Leistungen sind subsidiär und nur gegeben, wenn das jeweilige Modul abgeschlossen ist.",
+      "item_name": "insolvency_coverage_limit",
+      "is_included": true,
+      "description": "Für Annullationsansprüche infolge Insolvenz gilt eine Obergrenze der Versicherungsleistungen von AXA pro versichertes Ereignis von CHF 80'000. Bei pandemiebezogenen Fällen gelten gesonderte, tiefere Limiten (CHF 10'000 pro Ereignis/versicherter Person und Begrenzung der Anzahl Fälle pro Police). Im Personenassistance-Modul sind Transport- und Unterkunfts-/Verpflegungsmehrkosten bei Insolvenz auf CHF 1'000 pro versicherte Person begrenzt. Zudem gilt eine allgemeine finanzielle Obergrenze von CHF 1'000'000 pro Schadenfall.",
+      "unit": "CHF",
+      "value": 80000.0
+    },
+    "insolvency_protection_trip_cancellation_costs_limits_maximum_coverage_amount": {
+      "section_reference": "Teil C: C3.3; C3.4 (zusätzlich: Teil B: B2 Finanzielle Obergrenze)",
+      "full_text_part": "C3.3 Leistungsbegrenzung\nPro versichertes Ereignis sind alle Versicherungsleistungen zusammen begrenzt auf den ursprünglich von der versicherten Person bezahlten Preis der Reise oder der Ferien. Die Versicherungsleistungen der AXA pro Ereignis sind auf höchstens CHF 80 000 .- begrenzt. Die Leistungen werden nur für denjenigen Arrangementteil erbracht, den die versicherte Person tatsächlich nutzt.\n\nC3.4 Leistungsbegrenzung bei einer Pandemie\nBei versicherten Ereignissen gemäss C1.7 gelten folgende Leistungsbegrenzungen:\nC3.4.1 Buchungszeitpunkt vor einer Pandemie\n· Pro Police sind maximal 3 Annullationen von Reisen oder Ferien, die vor Ausbruch einer Pandemie gebucht wurden, versichert.\n· Die Versicherungsleistungen der AXA sind begrenzt auf höchstens CHF 10 000 .- pro versichertem Ereignis und versicherter Person.\nC3.4.2 Buchungszeitpunkt während einer Pandemie\n· Bei Reisen oder Ferien, die während einer Pandemie gebucht wurden, ist pro Police maximal ein versichertes Ereignis gedeckt.\n· Die Versicherungsleistungen der AXA sind begrenzt auf höchstens CHF 10 000 .- pro versicherter Person.\n\nB2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.",
+      "llm_summary": "Für die Annullationskosten-Versicherung ist eine explizite maximale Deckungssumme genannt: Allgemein sind die Leistungen pro versichertes Ereignis auf maximal CHF 80'000 begrenzt (C3.3). Zusätzlich gilt bei pandemiebedingten Ereignissen eine strengere Begrenzung: in der Regel maximal CHF 10'000 pro versichertem Ereignis und versicherter Person sowie Beschränkungen der Anzahl gedeckter Annullationen pro Police (C3.4). Unabhängig davon besteht eine allgemeine finanzielle Obergrenze der AXA pro Schadenfall von CHF 1'000'000 (B2), die als übergeordnete Grenze zu beachten ist.",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Maximale Deckungssumme für Annullationskosten pro versichertes Ereignis: grundsätzlich bis CHF 80'000; bei pandemiebedingten Ereignissen reduziert auf höchstens CHF 10'000 pro versichertem Ereignis und Person (zusätzlich gelten Police-weit Begrenzungen). Zudem besteht eine allgemeine Obergrenze von CHF 1'000'000 pro Schadenfall, die gesamthaft wirkt.",
+      "unit": "CHF",
+      "value": 80000.0
+    },
+    "insolvency_protection_airline_insolvency_limits_insolvency_coverage_limit": {
+      "section_reference": "Teil C: C3.3 (Leistungsbegrenzung). Siehe auch Teil C: C1.12 (Insolvenz) und C3.4 (Leistungsbegrenzung bei einer Pandemie); Teil D: D3.2.1/D3.2.2 (Personenassistance-Limits bei Insolvenz)",
+      "full_text_part": "C1.12 Insolvenz des Reiseveranstalters oder Reisedienstleisters\n· Die Reise oder die Ferien können wegen Insolvenz des Reiseveranstalters oder eines Reisedienstleisters nicht angetreten oder nicht wie vorgesehen fortgesetzt werden. Die versicherte Person ist verpflichtet, Kosten- oder Schadenersatz zuerst bei der betreffenden Reiseveranstalterin oder dem Reisedienstleister geltend zu machen.\n· Die AXA erbringt nur Leistungen, soweit die Annullationskosten nicht durch Dritte (z. B. Garantiefonds der Schweizer Reisebranche) übernommen werden (Subsidiärdeckung).\n\nC3.3 Leistungsbegrenzung\nPro versichertes Ereignis sind alle Versicherungsleistungen zusammen begrenzt auf den ursprünglich von der versicherten Person bezahlten Preis der Reise oder der Ferien. Die Versicherungsleistungen der AXA pro Ereignis sind auf höchstens CHF 80 000 .- begrenzt. Die Leistungen werden nur für denjenigen Arrangementteil erbracht, den die versicherte Person tatsächlich nutzt.\n\nC3.4 Leistungsbegrenzung bei einer Pandemie\nBei versicherten Ereignissen gemäss C1.7 gelten folgende Leistungsbegrenzungen:\nC3.4.1 Buchungszeitpunkt vor einer Pandemie\n· Pro Police sind maximal 3 Annullationen von Reisen oder Ferien, die vor Ausbruch einer Pandemie gebucht wurden, versichert.\n· Die Versicherungsleistungen der AXA sind begrenzt auf höchstens CHF 10 000 .- pro versichertem Ereignis und versicherter Person.\nC3.4.2 Buchungszeitpunkt während einer Pandemie\n· Bei Reisen oder Ferien, die während einer Pandemie gebucht wurden, ist pro Police maximal ein versichertes Ereignis gedeckt.\n· Die Versicherungsleistungen der AXA sind begrenzt auf höchstens CHF 10 000 .- pro versicherter Person.\n\nD3.2.1 Transportmehrkosten\nDie AXA bezahlt die Transportmehrkosten für die direkte Rückkehr an die ständige Wohnadresse. Ist danach eine Fortsetzung möglich, bezahlt die AXA die Transportmehrkosten bis maximal CHF 1000 .- pro versicherte Person.\n\nD3.2.2 Unterkunfts- und Verpflegungsmehrkosten\nDie AXA bezahlt die Unterkunfts- und Verpflegungsmehrkosten für einen unvorhergesehenen Aufenthalt bis maximal CHF 1000 .- pro versicherte Person.",
+      "llm_summary": "Die AVB nennen für die Annullationskosten-Abdeckung (inkl. Insolvenz des Reiseveranstalters, C1.12) eine Höchstgrenze: AXA-Leistungen pro Ereignis sind auf maximal CHF 80 000.- begrenzt (C3.3). Bei Pandemie-Fällen gelten spezielle, deutlich tiefere Limits (CHF 10 000.- pro Ereignis/Person und zusätzliche Beschränkungen pro Police, C3.4). Im Personenassistance-Modul (D3.2) sind Transport- sowie Unterkunfts-/Verpflegungsmehrkosten bei Insolvenz jeweils auf CHF 1 000.- pro versicherte Person begrenzt.",
+      "item_name": "insolvency_coverage_limit",
+      "is_included": true,
+      "description": "Höchstbetrag der Versicherungsleistungen für Annullationskosten infolge eines versicherten Ereignisses (einschliesslich Insolvenz des Reiseveranstalters) beträgt pro Ereignis maximal CHF 80 000.-. Bei pandemiebezogenen Fällen gelten gesonderte Limits (CHF 10 000.- pro Ereignis/Person und weitere Beschränkungen pro Police). Zusätzlich deckt das Personenassistance-Modul bei Insolvenz Transport- und Unterkunfts-/Verpflegungsmehrkosten bis jeweils maximal CHF 1 000.- pro versicherte Person.",
+      "unit": "CHF",
+      "value": 80000.0
+    },
+    "vehicle_assistance_accommodation_costs_limits_maximum_coverage_amount": {
+      "section_reference": "Teil D: D3.1.6, D3.2.2, D3.3.2, D3.4.2, D3.5.1; Teil E: E5.8; Teil B: B2",
+      "full_text_part": "B2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.\n\nD3.1.6 Unterkunfts- und Verpflegungsmehrkosten\nMuss die versicherte Person einen unvorhergesehenen Aufenthalt einlegen oder eine besser geeignete Unterkunft beziehen, bezahlt die AXA die Unterkunfts- und Verpflegungsmehrkosten bis maximal CHF 1000 .- pro versicherte Person. Spitalkosten werden dabei nicht übernommen.\n\nD3.2.2 Unterkunfts- und Verpflegungsmehrkosten\nDie AXA bezahlt die Unterkunfts- und Verpflegungsmehrkosten für einen unvorhergesehenen Aufenthalt bis maximal CHF 1000 .- pro versicherte Person.\n\nD3.3.2 Unterkunfts- und Verpflegungsmehrkosten\nDie AXA bezahlt die Unterkunfts- und Verpflegungsmehrkosten für einen unvorhergesehenen Aufenthalt bis maximal CHF 1000 .- pro versicherte Person.\n\nD3.4.2 Unterkunfts- und Verpflegungsmehrkosten\nDie AXA bezahlt die Unterkunfts- und Verpflegungsmehrkosten für einen unvorhergesehenen Aufenthalt bis maximal CHF 1000 .- pro versicherte Person.\n\nD3.5.1 Unterkunfts- und Verpflegungsmehrkosten\nDie AXA bezahlt die Unterkunfts- und Verpflegungsmehrkosten für einen unvorhergesehenen Aufenthalt bis maximal CHF 1000 .- pro versicherte Person.\n\nE5.8 Unterkunfts- und Verpflegungsmehrkosten\nDie AXA bezahlt die Unterkunfts- und Verpflegungsmehrkosten während der Dauer der Reparatur oder für einen unvorhergesehenen Aufenthalt bis maximal CHF 1000 .- pro versicherte Person.\n\nWird die versicherte Person verletzt und muss dadurch einen unvorhergesehenen Aufenthalt einschalten oder eine besser geeignete Unterkunft beziehen, bezahlt die AXA die Unterkunfts- und Verpflegungsmehrkosten bis maximal CHF 1000 .- pro versicherte Person. Spitalkos- ten werden dabei nicht übernommen.",
+      "llm_summary": "Im Dokument gibt es eine spezifizierte Leistungsbegrenzung für die Unterkunfts- und Verpflegungsmehrkosten: Diese Leistungen sind in den Teilen D (Personenassistance) und E (Fahrzeugassistance) jeweils auf maximal CHF 1000.- pro versicherte Person pro Ereignis begrenzt. Zusätzlich enthält Teil B (B2) eine generelle finanzielle Obergrenze für alle Leistungen der AXA von maximal CHF 1'000'000.- pro Schadenfall, die als oberste Grenze für Auszahlungen pro Schadenfall gilt.",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Die Police begrenzt die Unterkunfts- und Verpflegungsmehrkosten explizit auf maximal CHF 1000.- pro versicherte Person (jeweils genannt in D3.1.6, D3.2.2, D3.3.2, D3.4.2, D3.5.1 und E5.8). Zusätzlich gilt eine allgemeine finanzielle Obergrenze aller Leistungen der AXA von CHF 1'000'000.- pro Schadenfall (B2).",
+      "unit": "CHF",
+      "value": 1000.0
+    },
+    "vehicle_assistance_accommodation_costs_limits_daily_maximum": {
+      "section_reference": "N/A",
+      "full_text_part": "N/A",
+      "llm_summary": "Im gesamten Dokument wird kein täglicher Höchstbetrag (kein \"Tageslimit\" / \"pro Tag maximal\") für die Unterkunfts- und Verpflegungsmehrkosten genannt. Die AVB begrenzen diese Mehrkosten mehrfach auf maximal CHF 1000.- pro versicherte Person (z. B. D3.1.6, D3.2.2, D3.3.2, D3.4.2, D3.5.1 und E5.8), jedoch ohne Angabe eines Betrags pro Tag. Damit ist ein spezifisches daily_maximum (CHF/Tag) für diese Leistung nicht enthalten.",
+      "item_name": "daily_maximum",
+      "is_included": false,
+      "description": "N/A",
+      "unit": "N/A",
+      "value": 0.0
+    },
+    "vehicle_assistance_replacement_vehicle_limits_daily_maximum": {
+      "section_reference": "Teil E — E6.1.2 (E6 Zusatzleistungen: Garantieleistung)",
+      "full_text_part": "E6.1.2 Kann die AXA diese Fristen nicht einhalten, bezahlt sie der versicherten Person nach Ablauf dieser Frist für jeden zusätzlich benötigten Tag ein Ersatzfahrzeug, im Maximum während 5 Tagen bis zum Totalbetrag von CHF 500 .-.",
+      "llm_summary": "Die AXA bezahlt ein Ersatzfahrzeug für jeden zusätzlich benötigten Tag, wenn die garantierten Rückführungsfristen nicht eingehalten werden. Die Leistung ist auf maximal 5 Tage begrenzt und insgesamt auf CHF 500.-.",
+      "item_name": "daily_maximum",
+      "is_included": true,
+      "description": "Kostenübernahme für ein Ersatzfahrzeug pro zusätzlichem Tag nach Ablauf der garantierten Rückführungsfrist; die Leistung ist insgesamt auf maximal 5 Tage und insgesamt CHF 500.- begrenzt. Daraus ergibt sich eine implizite Tagesobergrenze von CHF 100.- (CHF 500 / 5 Tage).",
+      "unit": "CHF",
+      "value": 100.0
+    },
+    "vehicle_assistance_breakdown_assistance_limits_daily_maximum": {
+      "section_reference": "N/A",
+      "full_text_part": "N/A",
+      "llm_summary": "Im vorliegenden AVB-Dokument wurde kein expliziter «Tageslimit»/«Täglicher Höchstbetrag» (z. B. Formulierungen wie „pro Tag maximal“, „Tageslimit“, „Täglicher Höchstbetrag von CHF …“) für die Fahrzeug-Assistance bzw. die Pannenhilfe (E5.1) oder andere mit Panne zusammenhängende Leistungen genannt. Es finden sich mehrere Höchstbeträge, jedoch jeweils als «pro Ereignis», «pro versicherte Person» oder als Gesamtbetrag (z. B. E5.1: Erstattung bis maximal CHF 250 pro Ereignis, E5.2: CHF 2000 pro Ereignis, E5.3: CHF 250 pro Ereignis, E5.7/E5.8: CHF 1000 pro versicherte Person, E6.1.2: Ersatzfahrzeug maximal während 5 Tagen bis Total CHF 500). E6.1.2 nennt eine Maximallaufzeit (bis 5 Tage) und einen Totalbetrag (CHF 500) für ein Ersatzfahrzeug, aber keinen ausdrücklich ausgewiesenen Betrag «pro Tag». Daher liegt kein ausdrücklich erwähnter «daily_maximum» in CHF vor.",
+      "item_name": "daily_maximum",
+      "is_included": false,
+      "description": "N/A",
+      "unit": "N/A",
+      "value": 0.0
+    },
+    "vehicle_assistance_vehicle_repatriation_limits_maximum_coverage_amount": {
+      "section_reference": "Teil B - B2 Finanzielle Obergrenze im Schadenfall (siehe auch Teil E - E5.4 Fahrzeugrückführung)",
+      "full_text_part": "B2 Finanzielle Obergrenze im Schadenfall\nDie Leistungen der AXA sind auf maximal CHF 1 000 000 .- pro Schadenfall begrenzt.",
+      "llm_summary": "In Teil B, Abschnitt B2 ist eine generelle finanzielle Höchstgrenze für Leistungen festgelegt: AXA-Leistungen sind pro Schadenfall auf maximal CHF 1'000'000.- beschränkt. Für die Fahrzeugrückführung (Teil E, E5.4) bestehen daneben spezielle, leistungsbezogene Limiten (z. B. in der Schweiz maximal CHF 250.- pro Ereignis; im Ausland Erstattung bis maximal zum Zeitwert).",
+      "item_name": "maximum_coverage_amount",
+      "is_included": true,
+      "description": "Generelle finanzielle Obergrenze der AXA-Leistungen: die Leistungen sämtlicher Versicherungsbausteine sind pro Schadenfall auf maximal CHF 1'000'000.- begrenzt. Diese Obergrenze gilt auch für Ereignisse, die die Fahrzeugrückführung betreffen, zusätzlich zu den spezifischen Leistungslimiten in Teil E (z. B. E5.4: Fahrzeugrückführung in der Schweiz bis maximal CHF 250.- pro Ereignis; im Ausland nur bis maximal zum Zeitwert).",
+      "unit": "CHF",
+      "value": 1000000.0
+    }
+  }
+}

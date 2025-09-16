@@ -171,30 +171,38 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
             print("Starting document analysis...")
             self.update_state(state='PROCESSING', meta={'status': 'Analyzing document'})
 
-            results = loop.run_until_complete(analyzer.analyze_document_text(document_text, document_name))
+            results_dict = loop.run_until_complete(analyzer.analyze_document_text(document_text, document_name))
 
         finally:
             loop.close()
 
-        # Count results
-        num_segments = len(results.segments)
-        num_benefits = sum(len(segment.benefits) for segment in results.segments)
-        num_limits = sum(
-            len(benefit.limits) + len(benefit.conditions) + len(benefit.exclusions)
-            for segment in results.segments
-            for benefit in segment.benefits
-        )
+        # Count results from dictionary structure
+        num_segments = len(results_dict.get("segments", []))
+        num_benefits = 0
+        num_limits = 0
+        
+        # Count benefits and details from the dictionary structure
+        for segment_item in results_dict.get("segments", []):
+            for segment_name, segment_data in segment_item.items():
+                segment_benefits = segment_data.get("benefits", [])
+                num_benefits += len(segment_benefits)
+                
+                for benefit_item in segment_benefits:
+                    for benefit_name, benefit_data in benefit_item.items():
+                        num_limits += len(benefit_data.get("limits", []))
+                        num_limits += len(benefit_data.get("conditions", []))
+                        num_limits += len(benefit_data.get("exclusions", []))
 
         print(f"Analysis completed: {num_segments} segments, {num_benefits} benefits, {num_limits} details")
 
         # Export results if requested
         if export:
             print("Exporting results to JSON...")
-            analyzer.export_results(results, document_name)
+            analyzer.export_results(results_dict, document_name)
 
         # Show detailed results if requested
         if detailed:
-            analyzer.print_detailed_results(results, document_name)
+            analyzer.print_detailed_results(results_dict, document_name)
 
         # Seed to Directus if requested
         seeding_success = True
@@ -205,9 +213,8 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
 
             self.update_state(state='PROCESSING', meta={'status': 'Seeding to Directus'})
 
-            # Convert results to the format expected by directus_seeder
-            serialized_results = convert_pydantic_to_dict(results)
-            seeder_format = {document_name: serialized_results}
+            # The results_dict is already in the correct format for directus_seeder
+            seeder_format = {document_name: results_dict}
 
             seeding_success = seed_to_directus(
                 analysis_results=seeder_format,
@@ -237,9 +244,15 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
         error_msg = str(e)
         print(f"Analysis task failed: {error_msg}")
 
+        # Properly format exception for Celery backend
         self.update_state(
             state='FAILURE',
-            meta={'error': error_msg, 'status': 'Analysis failed'}
+            meta={
+                'error': error_msg,
+                'status': 'Analysis failed',
+                'exc_type': type(e).__name__,
+                'exc_message': str(e)
+            }
         )
 
         return {
@@ -295,9 +308,15 @@ def cleanup_product_task(self, product_id: str) -> Dict[str, Any]:
         error_msg = str(e)
         print(f"Cleanup task failed: {error_msg}")
 
+        # Properly format exception for Celery backend
         self.update_state(
             state='FAILURE',
-            meta={'error': error_msg, 'status': 'Cleanup failed'}
+            meta={
+                'error': error_msg,
+                'status': 'Cleanup failed',
+                'exc_type': type(e).__name__,
+                'exc_message': str(e)
+            }
         )
 
         return {
