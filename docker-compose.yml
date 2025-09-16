@@ -36,7 +36,7 @@ services:
     networks:
       - dci-network
     restart: unless-stopped
-    scale: 2  # Run 2 worker instances by default
+    scale: 1  # Run 1 worker instances by default
 
   broker:
     build:
@@ -55,6 +55,12 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - dci-network
     restart: unless-stopped

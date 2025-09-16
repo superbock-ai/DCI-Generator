@@ -67,27 +67,82 @@ REDIS_URL=redis://localhost:6379/0
 CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/0
 
-# JWT Authentication (for FastAPI)
+# FastAPI Broker Configuration
 DIRECTUS_SECRET=your-directus-secret-for-jwt-validation
+FASTAPI_PORT=8000
 ```
 
 ### 3. **Start the Platform**
 ```bash
-# Start Redis + Celery Workers
+# Start Redis + Celery Workers + FastAPI Broker
 docker compose up -d
 
 # Check service status
 docker compose ps
 
-# View worker logs
-docker compose logs -f worker
+# View all logs
+docker compose logs -f
+
+# View specific service logs
+docker compose logs -f worker   # Worker logs
+docker compose logs -f broker   # API logs
+docker compose logs -f redis    # Redis logs
+
+# Access API documentation
+open http://localhost:8000/docs  # OpenAPI docs
+open http://localhost:8000/redoc # ReDoc documentation
 ```
 
 ## 🎯 Usage
 
-The platform now operates as a **distributed task queue system**. Submit analysis jobs that are processed by Celery workers.
+The platform operates as a **containerized API-driven system** with FastAPI REST endpoints for job management and Celery workers for processing.
 
-### Task Submission (Python Script)
+### Production API Usage (Recommended)
+
+#### 1. Authentication & Job Submission
+
+```bash
+# Get JWT token (from your authentication system)
+export JWT_TOKEN="your-jwt-token"
+
+# Submit analysis job
+curl -X POST "http://localhost:8000/jobs/analysis" \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "product_id": "2258e45a-531e-4412-ab47-3c6bd96eed8a",
+    "export": true,
+    "debug": true,
+    "segment_chunks": 5,
+    "benefit_chunks": 4,
+    "detail_chunks": 2,
+    "seed_directus": false
+  }'
+
+# Response: {"job_id": "uuid", "status": "submitted", "message": "Analysis job submitted..."}
+```
+
+#### 2. Job Status Monitoring
+
+```bash
+# Check job status
+curl -X GET "http://localhost:8000/jobs/{job_id}/status" \
+  -H "Authorization: Bearer $JWT_TOKEN"
+
+# Response: {"job_id": "uuid", "status": "processing|completed|failed", "result": {...}}
+```
+
+#### 3. Cleanup Jobs
+
+```bash
+# Submit cleanup job
+curl -X POST "http://localhost:8000/jobs/cleanup" \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"product_id": "2258e45a-531e-4412-ab47-3c6bd96eed8a"}'
+```
+
+### Development Task Submission (Direct Celery)
 
 ```python
 # Add worker directory to path
@@ -155,6 +210,189 @@ For development and testing, the original CLI is still available:
 uv run worker/main.py 2258e45a-531e-4412-ab47-3c6bd96eed8a --export --debug
 ```
 
+### API Endpoints
+
+The FastAPI broker provides the following REST endpoints:
+
+#### Health & Documentation
+- `GET /health` - Service health check
+- `GET /docs` - OpenAPI/Swagger documentation
+- `GET /redoc` - ReDoc documentation
+- `GET /` - API information
+
+#### Job Management (Authentication Required)
+- `POST /jobs/analysis` - Submit analysis job
+- `POST /jobs/cleanup` - Submit cleanup job
+- `GET /jobs/{job_id}/status` - Get job status and results
+
+#### Authentication
+All job endpoints require JWT authentication via `Authorization: Bearer {token}` header. The JWT secret is validated using `DIRECTUS_SECRET` from environment variables.
+
+#### Request/Response Models
+
+**Analysis Job Request:**
+```json
+{
+  "product_id": "uuid-string",
+  "export": false,
+  "detailed": false,
+  "no_cache": false,
+  "segment_chunks": 8,
+  "benefit_chunks": 8,
+  "detail_chunks": 3,
+  "debug": false,
+  "debug_clean": false,
+  "debug_from": null,
+  "seed_directus": false,
+  "dry_run_directus": false
+}
+```
+
+**Job Response:**
+```json
+{
+  "job_id": "uuid",
+  "status": "submitted|processing|completed|failed",
+  "message": "Description",
+  "result": {...}  // Present when completed
+}
+```
+
+## 🔌 API Access & Monitoring
+
+### Starting the Platform
+```bash
+# Start all services (Redis + Workers + FastAPI Broker)
+docker compose up -d
+
+# Verify all services are running
+docker compose ps
+
+# Should show: redis (healthy), broker (healthy), 2+ workers (running)
+```
+
+### Accessing the API
+
+#### 1. API Documentation
+```bash
+# Interactive OpenAPI/Swagger UI
+open http://localhost:8000/docs
+
+# Clean ReDoc documentation
+open http://localhost:8000/redoc
+
+# Simple health check
+curl http://localhost:8000/health
+```
+
+#### 2. Authentication Setup
+Create a JWT token for API access (replace `your-directus-secret` with your actual secret):
+
+```bash
+# Generate JWT token for testing
+python3 -c "
+import jwt
+import datetime
+payload = {
+    'user_id': 'test-user',
+    'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+}
+token = jwt.encode(payload, 'your-directus-secret', algorithm='HS256')
+print(f'Export this: export JWT_TOKEN=\"{token}\"')
+"
+
+# Set the token for API calls
+export JWT_TOKEN="your-generated-token"
+```
+
+#### 3. Submit Jobs via API
+```bash
+# Submit analysis job
+curl -X POST "http://localhost:8000/jobs/analysis" \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "product_id": "2258e45a-531e-4412-ab47-3c6bd96eed8a",
+    "debug": true,
+    "export": true,
+    "segment_chunks": 4,
+    "seed_directus": false
+  }'
+
+# Monitor job status (replace job-id with returned job_id)
+curl -X GET "http://localhost:8000/jobs/{job-id}/status" \
+  -H "Authorization: Bearer $JWT_TOKEN"
+
+# Submit cleanup job
+curl -X POST "http://localhost:8000/jobs/cleanup" \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"product_id": "2258e45a-531e-4412-ab47-3c6bd96eed8a"}'
+```
+
+### Log Monitoring (Parallel)
+
+#### 1. Real-time Monitoring Setup
+```bash
+# Terminal 1: All service logs combined
+docker compose logs -f
+
+# Terminal 2: Worker logs only (all workers)
+docker compose logs -f worker
+
+# Terminal 3: Broker API logs
+docker compose logs -f broker
+
+# Terminal 4: Redis logs
+docker compose logs -f redis
+```
+
+#### 2. Advanced Log Filtering
+```bash
+# Monitor specific job progress
+docker compose logs -f worker | grep "2258e45a-531e-4412-ab47-3c6bd96eed8a"
+
+# Watch for completed analyses
+docker compose logs -f worker | grep "Analysis completed"
+
+# Monitor errors across all services
+docker compose logs -f | grep -i error
+
+# Follow logs with timestamps
+docker compose logs -f -t --tail=50
+```
+
+#### 3. Individual Worker Monitoring
+```bash
+# Monitor each worker separately (run in different terminals)
+docker compose logs -f dci_generator-worker-1
+docker compose logs -f dci_generator-worker-2
+docker compose logs -f dci_generator-worker-3
+docker compose logs -f dci_generator-worker-4
+
+# Or monitor all workers in background
+docker compose logs -f dci_generator-worker-1 &
+docker compose logs -f dci_generator-worker-2 &
+docker compose logs -f dci_generator-worker-3 &
+docker compose logs -f dci_generator-worker-4 &
+wait  # Wait for all background processes
+```
+
+#### 4. Performance Monitoring
+```bash
+# Check Redis queue status
+docker compose exec redis redis-cli LLEN celery
+
+# Monitor worker performance
+docker compose exec dci_generator-worker-1 celery -A celery_app inspect stats
+
+# Check active tasks
+docker compose exec dci_generator-worker-1 celery -A celery_app inspect active
+
+# Monitor system resources
+docker stats dci_generator-worker-1 dci_generator-worker-2 dci-broker dci-redis
+```
+
 ## 🚀 Production Operations
 
 ### Scaling Workers
@@ -184,19 +422,58 @@ docker compose logs redis
 docker compose exec worker python -c "print('Worker is running')"
 ```
 
-### Monitoring & Debugging
+### Quick Reference Commands
+
+#### Essential Operations
+```bash
+# Start platform
+docker compose up -d
+
+# Check service status
+docker compose ps
+
+# View all logs
+docker compose logs -f
+
+# Scale workers
+docker compose up -d --scale worker=3
+
+# Stop platform
+docker compose down
+```
+
+#### API Quick Test
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# Get API docs
+curl http://localhost:8000/docs
+
+# Submit job (need JWT token)
+curl -X POST "http://localhost:8000/jobs/analysis" \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"product_id": "2258e45a-531e-4412-ab47-3c6bd96eed8a"}'
+```
+
+#### Troubleshooting
 ```bash
 # Check Redis connectivity
-python validate_redis.py
+docker compose exec redis redis-cli ping
 
-# Run integration test
-python test_integration.py
+# Check Celery queue status
+docker compose exec redis redis-cli LLEN celery
 
 # Monitor worker performance
-docker compose exec worker celery -A celery_app inspect stats
+docker compose exec dci_generator-worker-1 celery -A celery_app inspect stats
 
-# Check Redis queue status
-docker compose exec redis redis-cli LLEN celery
+# Check active tasks
+docker compose exec dci_generator-worker-1 celery -A celery_app inspect active
+
+# Restart specific service
+docker compose restart worker
+docker compose restart broker
 ```
 
 ### Volume Management
