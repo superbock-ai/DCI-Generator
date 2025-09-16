@@ -46,6 +46,7 @@ if not DIRECTUS_SECRET:
 class AnalysisJobRequest(BaseModel):
     """Request model for analysis job submission."""
     product_id: str = Field(..., description="Product ID from Directus to analyze")
+    seed_directus: bool = Field(True, description="Seed results to Directus")
     export: bool = Field(False, description="Export results to JSON file")
     detailed: bool = Field(False, description="Show detailed results")
     no_cache: bool = Field(False, description="Disable caching for this run")
@@ -55,7 +56,6 @@ class AnalysisJobRequest(BaseModel):
     debug: bool = Field(False, description="Enable debug mode")
     debug_clean: bool = Field(False, description="Clean debug files before running")
     debug_from: Optional[str] = Field(None, description="Force re-run from specific tier")
-    seed_directus: bool = Field(False, description="Seed results to Directus")
     dry_run_directus: bool = Field(False, description="Dry run mode for Directus seeding")
 
 

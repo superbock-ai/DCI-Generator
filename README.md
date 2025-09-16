@@ -201,13 +201,13 @@ analyze_document_task.delay(
 cleanup_result = cleanup_product_task.delay("product-uuid")
 ```
 
-### Direct CLI (Legacy Mode)
+### Legacy CLI (Development Only)
 
-For development and testing, the original CLI is still available:
+For development and testing, the original CLI is still available inside containers:
 
 ```bash
-# Direct CLI usage (not recommended for production)
-uv run worker/main.py 2258e45a-531e-4412-ab47-3c6bd96eed8a --export --debug
+# Direct CLI usage via container (development only)
+docker compose exec dci_generator-worker-1 python worker_main.py 2258e45a-531e-4412-ab47-3c6bd96eed8a --export --debug
 ```
 
 ### API Endpoints
@@ -610,26 +610,30 @@ class AnalysisResult(BaseModel):
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `OPENAI_API_KEY` | Yes | - | OpenAI API authentication |
-| `GRAPHQL_AUTH_TOKEN` | Yes | - | Quinsights GraphQL token |
+| `DIRECTUS_AUTH_TOKEN` | Yes | - | Directus/GraphQL authentication token |
+| `DIRECTUS_SECRET` | Yes | - | JWT secret for API authentication |
+| `DIRECTUS_URL` | Yes | - | Directus/GraphQL endpoint URL |
 | `OPENAI_MODEL` | No | `gpt-4o-mini` | OpenAI model to use |
-| `GRAPHQL_URL` | No | UAT endpoint | GraphQL endpoint URL |
+| `REDIS_URL` | No | `redis://localhost:6379/0` | Redis connection URL |
+| `CELERY_BROKER_URL` | No | `redis://localhost:6379/0` | Celery broker URL |
+| `CELERY_RESULT_BACKEND` | No | `redis://localhost:6379/0` | Celery result backend URL |
+| `FASTAPI_PORT` | No | `8000` | FastAPI broker port |
 
-### Command Line Options
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--export` | `-e` | Export results to JSON file |
-| `--detailed` | `-d` | Show comprehensive analysis details |
-| `--no-cache` | - | Disable caching for fresh results |
-| `--segment-chunks` | - | Segments per parallel chunk (default: 8) |
-| `--benefit-chunks` | - | Benefits per parallel chunk (default: 8) |
-| `--detail-chunks` | - | Details per parallel chunk (default: 3) |
-| `--debug` | - | Enable debug mode with auto-resume |
-| `--debug-clean` | - | Delete all debug files before running |
-| `--debug-from` | - | Force re-run from specific tier (segments/benefits/details) |
-| `--seed-directus` | - | Seed analysis results to Directus after analysis |
-| `--product-id` | - | Existing dcm_product UUID to seed data under (required with --seed-directus) |
-| `--dry-run-directus` | - | Show what would be seeded without making changes |
-| `--cleanup-directus` | - | Remove ALL data for a product from Directus (requires --product-id, DELETES product) |
+### API Job Parameters
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `product_id` | string | Required | Directus product UUID to analyze |
+| `export` | boolean | false | Export results to JSON file |
+| `detailed` | boolean | false | Show comprehensive analysis details |
+| `no_cache` | boolean | false | Disable LLM caching for fresh results |
+| `segment_chunks` | integer | 8 | Segments per parallel chunk |
+| `benefit_chunks` | integer | 8 | Benefits per parallel chunk |
+| `detail_chunks` | integer | 3 | Details per parallel chunk |
+| `debug` | boolean | false | Enable debug mode with file saving |
+| `debug_clean` | boolean | false | Clean debug files before run |
+| `debug_from` | string | null | Force re-run from tier ('segments'/'benefits'/'details') |
+| `seed_directus` | boolean | false | Seed analysis results to Directus |
+| `dry_run_directus` | boolean | false | Dry run seeding (preview only) |
 
 ### Rate Limiting & Reliability
 - **Chunked Processing**: Processes items in configurable batches to avoid API limits
@@ -651,20 +655,28 @@ class AnalysisResult(BaseModel):
 
 ```
 dci_generator/
-├── main.py                          # Main CLI application
-├── directus_seeder.py               # Directus integration module
-├── dev.ipynb                        # Development notebook
-├── graphql/
-│   └── GetCompleteTaxonomyHierarchy.graphql  # GraphQL query
-├── travel-insurance/
-│   └── markdown/                    # Insurance documents
-├── segment_structured_output.json   # Output schema definition
-├── example_gql_response.json       # Sample GraphQL response
-├── README_SEEDER.md                # Directus seeding documentation
+├── docker-compose.yml              # Container orchestration
 ├── .env.example                    # Environment template
 ├── .env                           # Environment configuration (gitignored)
-├── CLAUDE.md                      # Developer documentation
-└── README.md                      # This file
+├── worker/                         # Celery worker container
+│   ├── Dockerfile
+│   ├── worker_main.py              # Core analysis engine
+│   ├── celery_app.py               # Celery configuration
+│   ├── tasks.py                    # Celery task definitions
+│   ├── worker.py                   # Worker startup script
+│   ├── directus_tools.py           # Directus integration
+│   ├── debug/                      # Debug output files
+│   ├── exports/                    # Analysis export files
+│   └── graphql/                    # GraphQL queries
+│       └── GetCompleteTaxonomyHierarchy.graphql
+├── broker/                         # FastAPI broker container
+│   ├── Dockerfile
+│   └── main.py                     # FastAPI application
+├── test_api_endpoints.py           # API integration tests
+├── IMPLEMENTATION_PLAN.md          # Development plan
+├── README_SEEDER.md                # Directus seeding documentation
+├── CLAUDE.md                       # Developer documentation
+└── README.md                       # This file
 ```
 
 ## 🔒 Security
@@ -719,16 +731,28 @@ dcm_product (existing)
 │   └── insurance_dcm_exclusion (segment-level)
 ```
 
-### Example Usage
+### Example API Usage
 ```bash
-# Complete workflow: analyze + seed in one step
-uv run main.py generali.md --export --debug --seed-directus --product-id 92f3ee1b-9b03-4085-ab01-555cd9b0507c
+# Complete workflow: analyze + seed via API
+curl -X POST "http://localhost:8000/jobs/analysis" \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "product_id": "92f3ee1b-9b03-4085-ab01-555cd9b0507c",
+    "export": true,
+    "debug": true,
+    "seed_directus": true
+  }'
 
 # Test before seeding (dry run)
-uv run main.py generali.md --seed-directus --product-id 92f3ee1b-9b03-4085-ab01-555cd9b0507c --dry-run-directus
-
-# Seed from existing debug files (fast, no re-analysis)
-uv run main.py generali.md --debug --seed-directus --product-id 92f3ee1b-9b03-4085-ab01-555cd9b0507c
+curl -X POST "http://localhost:8000/jobs/analysis" \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "product_id": "92f3ee1b-9b03-4085-ab01-555cd9b0507c",
+    "seed_directus": true,
+    "dry_run_directus": true
+  }'
 ```
 
 For detailed Directus seeding documentation, see `README_SEEDER.md`.
@@ -736,31 +760,59 @@ For detailed Directus seeding documentation, see `README_SEEDER.md`.
 ## 🔬 Development
 
 ### Development Workflow
-1. **Interactive Development**: Use `dev.ipynb` for experimentation
-2. **Production Testing**: Use `main.py` for complete pipeline testing
-3. **Prompt Iteration**: Leverage caching for rapid prompt development
-4. **Schema Evolution**: Update `AnalysisResult` model as needed
+1. **Local Development**: Modify code in `worker/` and `broker/` directories
+2. **Testing**: Use `test_api_endpoints.py` for API integration testing
+3. **Container Testing**: Rebuild containers with `docker compose up -d --build`
+4. **Log Monitoring**: Use `docker compose logs -f` for real-time debugging
 
-### Adding New Analysis Items
-1. **GraphQL Schema**: Add new taxonomy items to GraphQL endpoint
-2. **Prompt Templates**: Create specialized analysis prompts
-3. **Chain Integration**: Add to parallel processing pipeline
-4. **Result Processing**: Update export and display logic
+### Adding New Features
+1. **Worker Changes**: Modify `worker/worker_main.py` or `worker/tasks.py`
+2. **API Changes**: Modify `broker/main.py` for new endpoints
+3. **Container Rebuild**: Run `docker compose up -d --build` after changes
+4. **Integration Testing**: Run API tests to verify functionality
 
-## 🚀 Future Enhancements
+### Development Environment Setup
+```bash
+# Start development environment
+docker compose up -d
 
-### Planned Features
+# View logs for debugging
+docker compose logs -f worker
+docker compose logs -f broker
+
+# Run tests
+python test_api_endpoints.py
+
+# Access worker container for debugging
+docker compose exec dci_generator-worker-1 /bin/bash
+```
+
+## 🚀 Current Capabilities
+
+### Implemented Features ✅
+- ✅ **REST API Interface**: Complete FastAPI broker with job management
+- ✅ **Containerized Architecture**: Docker Compose orchestration
+- ✅ **Scalable Processing**: Horizontal worker scaling with Redis queue
+- ✅ **JWT Authentication**: Secure API access control
+- ✅ **Real-time Monitoring**: Comprehensive logging and status tracking
+- ✅ **Debug Mode**: Auto-resume and progress tracking
+- ✅ **Directus Integration**: Hierarchical data seeding
+- ✅ **Parallel Processing**: Multi-tier concurrent analysis
+
+### Future Enhancements
+
+#### Planned Features
 - **Multi-language Support**: Extend beyond German insurance documents
 - **Custom Taxonomies**: Support for user-defined analysis hierarchies
-- **Batch Processing**: Analyze multiple documents simultaneously
-- **API Interface**: REST API for programmatic access
-- **Dashboard**: Web interface for analysis management
+- **Batch Processing**: Analyze multiple documents simultaneously via API
+- **Web Dashboard**: Browser-based interface for job management
+- **Webhook Notifications**: Real-time job completion callbacks
 
-### Extensibility Points
-- **New Document Formats**: PDF, HTML, DOCX support
-- **Additional LLM Providers**: Azure OpenAI, Anthropic, local models
-- **Export Formats**: Excel, CSV, PDF reports
-- **Integration APIs**: Webhook notifications, database storage
+#### Extensibility Points
+- **Additional Document Formats**: PDF, HTML, DOCX input support
+- **Alternative LLM Providers**: Azure OpenAI, Anthropic, local models
+- **Enhanced Export Options**: Excel, CSV, PDF report generation
+- **Advanced Analytics**: Performance metrics and usage statistics
 
 ## 🆘 Support
 
