@@ -1,0 +1,38 @@
+# Exclude debug files and exports
+debug/*
+exports/*
+
+# Exclude test files
+../test_*.py
+
+# Exclude git and IDE files
+../.git
+../.gitignore
+../.claude
+../.serena
+
+# Exclude documentation
+../README*.md
+../CLAUDE.md
+../IMPLEMENTATION_PLAN.md
+../worker_instructions.md
+
+# Exclude example files
+../example_*.json
+../segment_structured_output.json
+../generali_*.json
+
+# Environment files (will be mounted at runtime)
+../.env
+../.env.example
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environment (we build our own)
+../.venv

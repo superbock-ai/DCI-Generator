@@ -1,0 +1,41 @@
+# Build from root directory, exclude these files
+
+# Debug files and exports
+worker/debug/*
+worker/exports/*
+
+# Test files
+test_*.py
+
+# Git and IDE files
+.git
+.gitignore
+.claude
+.serena
+
+# Documentation
+README*.md
+CLAUDE.md
+IMPLEMENTATION_PLAN.md
+worker_instructions.md
+
+# Example files
+example_*.json
+segment_structured_output.json
+generali_*.json
+
+# Environment files (will be mounted at runtime)
+.env
+.env.example
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+**/__pycache__
+
+# Virtual environment (we build our own)
+.venv
