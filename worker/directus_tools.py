@@ -338,6 +338,50 @@ class DirectusClient:
             raise
 
 
+def sanitize_utf8_text(text: str) -> str:
+    """
+    Sanitize text to ensure it's valid UTF-8 and remove problematic characters.
+    
+    Args:
+        text: Input text that may contain invalid UTF-8 sequences
+        
+    Returns:
+        Sanitized text safe for database storage
+    """
+    if not text or not isinstance(text, str):
+        return text
+    
+    # Remove null bytes and other problematic control characters
+    sanitized = text.replace('\x00', '')  # Remove null bytes
+    sanitized = sanitized.replace('\x01', '')  # Remove start of heading
+    sanitized = sanitized.replace('\x02', '')  # Remove start of text
+    sanitized = sanitized.replace('\x03', '')  # Remove end of text
+    sanitized = sanitized.replace('\x04', '')  # Remove end of transmission
+    sanitized = sanitized.replace('\x05', '')  # Remove enquiry
+    sanitized = sanitized.replace('\x06', '')  # Remove acknowledge
+    sanitized = sanitized.replace('\x07', '')  # Remove bell
+    sanitized = sanitized.replace('\x08', '')  # Remove backspace
+    # Keep \x09 (tab) and \x0A (newline)
+    sanitized = sanitized.replace('\x0B', '')  # Remove vertical tab
+    sanitized = sanitized.replace('\x0C', '')  # Remove form feed
+    # Keep \x0D (carriage return)
+    sanitized = sanitized.replace('\x0E', '')  # Remove shift out
+    sanitized = sanitized.replace('\x0F', '')  # Remove shift in
+    
+    # Remove other control characters (0x10-0x1F except tab, newline, carriage return)
+    for i in range(0x10, 0x20):
+        if i not in [0x09, 0x0A, 0x0D]:  # Keep tab, newline, carriage return
+            sanitized = sanitized.replace(chr(i), '')
+    
+    # Ensure the string is valid UTF-8 by encoding/decoding
+    try:
+        sanitized = sanitized.encode('utf-8', errors='ignore').decode('utf-8')
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        # If there are still issues, replace problematic characters
+        sanitized = sanitized.encode('utf-8', errors='replace').decode('utf-8')
+    
+    return sanitized
+
 class DirectusSeeder:
     """Main seeder class for inserting analysis results into Directus"""
 
@@ -388,14 +432,14 @@ class DirectusSeeder:
 
         data = {
             'status': 'published',
-            'segment_name': segment_name,
-            'description': segment_data.get('description'),
+            'segment_name': sanitize_utf8_text(segment_name),
+            'description': sanitize_utf8_text(segment_data.get('description')),
             'dcm_product': product_id,
             'taxonomy_item_relationship': taxonomy_rel_id,
-            'document_reference': segment_data.get('document_reference'),
-            'section_reference': segment_data.get('section_reference'),
-            'full_text_part': segment_data.get('full_text_part'),
-            'llm_summary': segment_data.get('llm_summary'),
+            'document_reference': sanitize_utf8_text(segment_data.get('document_reference')),
+            'section_reference': sanitize_utf8_text(segment_data.get('section_reference')),
+            'full_text_part': sanitize_utf8_text(segment_data.get('full_text_part')),
+            'llm_summary': sanitize_utf8_text(segment_data.get('llm_summary')),
             'extraction_date': datetime.now(timezone.utc).isoformat(),
             'validated_by_human': False
         }
@@ -425,30 +469,32 @@ class DirectusSeeder:
         if not taxonomy_rel_id:
             print(f"    ⚠ No taxonomy mapping found for benefit: {benefit_mapping_key}")
 
-        # Clean numeric values for benefits too
+        # Handle value attribute - if float convert to string, if string check 255 char limit
         raw_value = benefit_data.get('value')
         cleaned_value = None
         if raw_value and raw_value != 'N/A':
-            try:
-                clean_str = str(raw_value).replace("'", "").replace(",", "")
-                numeric_value = float(clean_str)
-                cleaned_value = int(numeric_value) if numeric_value.is_integer() else numeric_value
-            except ValueError:
-                # Truncate string values to 250 characters for database compatibility
-                cleaned_value = str(raw_value)[:250] if len(str(raw_value)) > 250 else raw_value
+            if isinstance(raw_value, float):
+                # Convert float to string and ensure it's shorter than 255 chars
+                cleaned_value = str(raw_value)
+                if len(cleaned_value) > 255:
+                    cleaned_value = cleaned_value[:255]
+            else:
+                # It's a string already, only check for 255 char limit
+                sanitized_value = sanitize_utf8_text(str(raw_value))
+                cleaned_value = sanitized_value[:255] if len(sanitized_value) > 255 else sanitized_value
 
         data = {
             'status': 'published',
-            'benefit_name': benefit_name,
-            'description': benefit_data.get('description'),
+            'benefit_name': sanitize_utf8_text(benefit_name),
+            'description': sanitize_utf8_text(benefit_data.get('description')),
             'insurance_dcm_segment': segment_id,
             'taxonomy_item_relationship': taxonomy_rel_id,
             'actual_value': cleaned_value,
-            'unit': benefit_data.get('unit') if benefit_data.get('unit') != 'N/A' else None,
-            'document_reference': benefit_data.get('document_reference'),
-            'section_reference': benefit_data.get('section_reference'),
-            'full_text_part': benefit_data.get('full_text_part'),
-            'llm_summary': benefit_data.get('llm_summary'),
+            'unit': sanitize_utf8_text(benefit_data.get('unit')) if benefit_data.get('unit') != 'N/A' else None,
+            'document_reference': sanitize_utf8_text(benefit_data.get('document_reference')),
+            'section_reference': sanitize_utf8_text(benefit_data.get('section_reference')),
+            'full_text_part': sanitize_utf8_text(benefit_data.get('full_text_part')),
+            'llm_summary': sanitize_utf8_text(benefit_data.get('llm_summary')),
             'extraction_date': datetime.now(timezone.utc).isoformat(),
             'validated_by_human': False
         }
@@ -487,22 +533,22 @@ class DirectusSeeder:
             detail_mapping_key = f"{segment_name}_{detail_name}"
             taxonomy_rel_id = self.taxonomy_mappings.get(detail_type, {}).get(detail_mapping_key)
 
-        # Base data structure
+        # Base data structure with UTF-8 sanitization
         data = {
             'status': 'published',
             'taxonomy_item_relationship': taxonomy_rel_id,
-            'document_reference': detail_data.get('document_reference'),
-            'section_reference': detail_data.get('section_reference'),
-            'full_text_part': detail_data.get('full_text_part'),
-            'llm_summary': detail_data.get('llm_summary'),
+            'document_reference': sanitize_utf8_text(detail_data.get('document_reference')),
+            'section_reference': sanitize_utf8_text(detail_data.get('section_reference')),
+            'full_text_part': sanitize_utf8_text(detail_data.get('full_text_part')),
+            'llm_summary': sanitize_utf8_text(detail_data.get('llm_summary')),
             'extraction_date': datetime.now(timezone.utc).isoformat(),
             'validated_by_human': False
         }
 
         # Add specific fields and relationships based on detail type
         if detail_type == 'conditions':
-            data['condition_name'] = detail_data.get('item_name', detail_key)
-            data['description'] = detail_data.get('description')
+            data['condition_name'] = sanitize_utf8_text(detail_data.get('item_name', detail_key))
+            data['description'] = sanitize_utf8_text(detail_data.get('description'))
             if product_id:
                 data['dcm_product'] = product_id
             if segment_id:
@@ -511,41 +557,46 @@ class DirectusSeeder:
                 data['insurance_dcm_benefit'] = benefit_id
 
         elif detail_type == 'limits':
-            data['limit_name'] = detail_data.get('item_name', detail_key)
-            data['description'] = detail_data.get('description')
-            # Clean numeric values - remove apostrophes and convert to proper format
+            data['limit_name'] = sanitize_utf8_text(detail_data.get('item_name', detail_key))
+            data['description'] = sanitize_utf8_text(detail_data.get('description'))
+            
+            # Handle value attribute - if float use directly, if string clean it
             raw_value = detail_data.get('value')
-            if raw_value and raw_value not in ['N/A', '', ',']:
-                # Remove Swiss number formatting (apostrophes) and try to convert to number
-                try:
-                    clean_value = str(raw_value).replace("'", "").replace(",", "").strip()
-                    # Skip empty strings after cleaning
-                    if not clean_value:
-                        data['limit_value'] = None
-                    else:
-                        # Try to convert to float first, then int if it's a whole number
-                        numeric_value = float(clean_value)
-                        if numeric_value.is_integer():
-                            data['limit_value'] = int(numeric_value)
-                        else:
-                            data['limit_value'] = numeric_value
-                except ValueError:
-                    # If conversion fails, handle special text values
-                    text_value = str(raw_value).strip()
-                    if text_value and text_value not in ['N/A', ',']:
-                        # For text values like "Unbegrenzt" (unlimited), store as NULL since it's a numeric field
-                        # Or we could store a very large number to represent unlimited
-                        if text_value.lower() in ['unbegrenzt', 'unlimited', 'illimité', 'unlimited coverage']:
-                            data['limit_value'] = None  # or use 999999999 for unlimited
-                        else:
-                            # Store other meaningful text values as NULL for numeric field
+            if raw_value is not None and raw_value not in ['N/A', '', ',']:
+                if isinstance(raw_value, float):
+                    # Use float value directly
+                    data['limit_value'] = raw_value
+                else:
+                    # It's a string, perform cleaning as before
+                    try:
+                        clean_value = str(raw_value).replace("'", "").replace(",", "").strip()
+                        # Skip empty strings after cleaning
+                        if not clean_value:
                             data['limit_value'] = None
-                            print(f"      ⚠ Non-numeric limit value '{text_value}' stored as NULL")
-                    else:
-                        data['limit_value'] = None
+                        else:
+                            # Try to convert to float first, then int if it's a whole number
+                            numeric_value = float(clean_value)
+                            if numeric_value.is_integer():
+                                data['limit_value'] = int(numeric_value)
+                            else:
+                                data['limit_value'] = numeric_value
+                    except ValueError:
+                        # If conversion fails, handle special text values
+                        text_value = sanitize_utf8_text(str(raw_value).strip())
+                        if text_value and text_value not in ['N/A', ',']:
+                            # For text values like "Unbegrenzt" (unlimited), store as NULL since it's a numeric field
+                            if text_value.lower() in ['unbegrenzt', 'unlimited', 'illimité', 'unlimited coverage']:
+                                data['limit_value'] = None  # or use 999999999 for unlimited
+                            else:
+                                # Store other meaningful text values as NULL for numeric field
+                                data['limit_value'] = None
+                                print(f"      ⚠ Non-numeric limit value '{text_value}' stored as NULL")
+                        else:
+                            data['limit_value'] = None
             else:
                 data['limit_value'] = None
-            data['limit_unit'] = detail_data.get('unit')
+                
+            data['limit_unit'] = sanitize_utf8_text(detail_data.get('unit'))
             if product_id:
                 data['dcm_product'] = product_id
             if segment_id:
@@ -554,8 +605,8 @@ class DirectusSeeder:
                 data['insurance_dcm_benefit'] = benefit_id
 
         elif detail_type == 'exclusions':
-            data['exclusion_name'] = detail_data.get('item_name', detail_key)
-            data['description'] = detail_data.get('description')
+            data['exclusion_name'] = sanitize_utf8_text(detail_data.get('item_name', detail_key))
+            data['description'] = sanitize_utf8_text(detail_data.get('description'))
             if product_id:
                 data['dcm_product'] = product_id
             if segment_id:
