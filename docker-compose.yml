@@ -23,7 +23,6 @@ services:
       context: .
       dockerfile: worker/Dockerfile
     image: dci-worker
-    container_name: dci-worker
     depends_on:
       redis:
         condition: service_healthy
@@ -39,6 +38,7 @@ services:
     networks:
       - dci-network
     restart: unless-stopped
+    scale: 2  # Run 2 worker instances by default
 
 volumes:
   redis_data:

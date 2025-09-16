@@ -50,5 +50,5 @@ RUN chown -R worker:worker /app
 # Switch to non-root user
 USER worker
 
-# Set default command
-CMD ["python", "main.py", "--help"]
+# Set default command to run Celery worker
+CMD ["python", "worker.py"]
