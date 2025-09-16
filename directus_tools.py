@@ -1,5 +1,5 @@
 """
-Directus Data Seeder Module for Analysis Results
+Directus Data Tools Module for Analysis Results
 
 This module provides functions to insert insurance analysis results into Directus
 while maintaining hierarchical relationships between:
@@ -11,13 +11,8 @@ while maintaining hierarchical relationships between:
 The module preserves the hierarchical structure through proper relationship management.
 
 Usage:
-    from directus_seeder import seed_to_directus, cleanup_seeded_data
+    from directus_tools import DirectusConfig, DirectusClient, DirectusSeeder
 
-    # Seed analysis results
-    success = seed_to_directus(analysis_results, product_id, dry_run=False)
-
-    # Clean up seeded data
-    success = cleanup_seeded_data()
 """
 
 import os

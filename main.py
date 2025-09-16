@@ -163,7 +163,7 @@ def create_smart_wait_strategy():
 
 def get_debug_filename(document_name: str, tier: str) -> str:
     """Get debug filename for a specific document and analysis tier."""
-    return f"{document_name}_{tier}.debug.json"
+    return f"debug/{document_name}_{tier}.debug.json"
 
 
 def save_debug_results(document_name: str, tier: str, results: dict, chunk_sizes: dict):
