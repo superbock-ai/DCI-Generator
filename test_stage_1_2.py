@@ -27,7 +27,8 @@ def test_dockerfile_exists():
         "WORKDIR /app",
         "uv sync",
         "useradd",
-        "USER worker"
+        "USER worker",
+        "CMD [\"python\", \"main.py\", \"--help\"]"
     ]
 
     for element in required_elements:

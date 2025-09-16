@@ -30,8 +30,12 @@ COPY --from=builder /app/.venv /app/.venv
 COPY pyproject.toml ./
 COPY uv.lock ./
 
-# Copy worker application code
-COPY worker/ ./worker/
+# Copy worker application code directly to /app
+COPY worker/main.py ./
+COPY worker/directus_tools.py ./
+COPY worker/debug/ ./debug/
+COPY worker/exports/ ./exports/
+COPY worker/graphql/ ./graphql/
 
 # Ensure the virtual environment is in PATH
 ENV PATH="/app/.venv/bin:$PATH"
@@ -47,4 +51,4 @@ RUN chown -R worker:worker /app
 USER worker
 
 # Set default command
-CMD ["python", "worker/main.py", "--help"]
+CMD ["python", "main.py", "--help"]
