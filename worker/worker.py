@@ -21,7 +21,7 @@ def main():
         'worker',
         '--loglevel=info',
         '--hostname=dci-worker@%h',
-        '--concurrency=2',  # Process 2 tasks concurrently
+        '--concurrency=1',  # Process 1 tasks concurrently
         '--prefetch-multiplier=1',  # Only prefetch 1 task per worker process
         '--max-tasks-per-child=10',  # Restart worker after 10 tasks to prevent memory leaks
     ]
