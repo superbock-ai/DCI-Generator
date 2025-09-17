@@ -338,15 +338,16 @@ class DirectusClient:
             raise
 
 
-def sanitize_utf8_text(text: str) -> str:
+def sanitize_and_truncate_text(text: str, max_length: int = 300) -> str:
     """
-    Sanitize text to ensure it's valid UTF-8 and remove problematic characters.
+    Sanitize text to ensure it's valid UTF-8, remove problematic characters, and truncate to max length.
     
     Args:
         text: Input text that may contain invalid UTF-8 sequences
+        max_length: Maximum length of the text (default: 300)
         
     Returns:
-        Sanitized text safe for database storage
+        Sanitized and truncated text safe for database storage
     """
     if not text or not isinstance(text, str):
         return text
@@ -380,7 +381,10 @@ def sanitize_utf8_text(text: str) -> str:
         # If there are still issues, replace problematic characters
         sanitized = sanitized.encode('utf-8', errors='replace').decode('utf-8')
     
-    return sanitized
+    # Truncate to max_length
+    if len(sanitized) <= max_length:
+        return sanitized
+    return sanitized[:max_length] + "..."
 
 class DirectusSeeder:
     """Main seeder class for inserting analysis results into Directus"""
@@ -418,7 +422,7 @@ class DirectusSeeder:
         print(f"✓ Using pre-fetched taxonomy mappings: {len(self.taxonomy_mappings['segments'])} segments, {len(self.taxonomy_mappings['benefits'])} benefits")
 
 
-    def create_segment(self, segment_key: str, segment_data: Dict[str, Any], product_id: str) -> str:
+    def create_segment(self, segment_key: str, segment_data: Dict[str, Any], product_id: str, fallback_doc_ref: str = None) -> str:
         """Create insurance_dcm_segment entry and return its ID"""
 
         # Get taxonomy relationship ID for this segment
@@ -430,16 +434,19 @@ class DirectusSeeder:
             # Try to find by key if item_name lookup failed
             taxonomy_rel_id = self.taxonomy_mappings.get('segments', {}).get(segment_key)
 
+        # Use analysis document_reference if available, otherwise fallback to product's document_reference
+        doc_ref = segment_data.get('document_reference') or fallback_doc_ref
+
         data = {
             'status': 'published',
-            'segment_name': sanitize_utf8_text(segment_name),
-            'description': sanitize_utf8_text(segment_data.get('description')),
+            'segment_name': sanitize_and_truncate_text(segment_name),
+            'description': sanitize_and_truncate_text(segment_data.get('description'), 200),
             'dcm_product': product_id,
             'taxonomy_item_relationship': taxonomy_rel_id,
-            'document_reference': sanitize_utf8_text(segment_data.get('document_reference')),
-            'section_reference': sanitize_utf8_text(segment_data.get('section_reference')),
-            'full_text_part': sanitize_utf8_text(segment_data.get('full_text_part')),
-            'llm_summary': sanitize_utf8_text(segment_data.get('llm_summary')),
+            'document_reference': sanitize_and_truncate_text(doc_ref, 200),
+            'section_reference': sanitize_and_truncate_text(segment_data.get('section_reference'), 200),
+            'full_text_part': sanitize_and_truncate_text(segment_data.get('full_text_part')),
+            'llm_summary': sanitize_and_truncate_text(segment_data.get('llm_summary')),
             'extraction_date': datetime.now(timezone.utc).isoformat(),
             'validated_by_human': False
         }
@@ -453,7 +460,7 @@ class DirectusSeeder:
         print(f"  ✓ Created segment: {data['segment_name']} (ID: {segment_id})")
         return segment_id
 
-    def create_benefit(self, benefit_key: str, benefit_data: Dict[str, Any], segment_id: str, segment_name: str) -> str:
+    def create_benefit(self, benefit_key: str, benefit_data: Dict[str, Any], segment_id: str, segment_name: str, fallback_doc_ref: str = None) -> str:
         """Create insurance_dcm_benefit entry and return its ID"""
 
         # Get taxonomy relationship ID for this benefit
@@ -469,32 +476,33 @@ class DirectusSeeder:
         if not taxonomy_rel_id:
             print(f"    ⚠ No taxonomy mapping found for benefit: {benefit_mapping_key}")
 
-        # Handle value attribute - if float convert to string, if string check 255 char limit
+        # Handle value attribute - convert all values to strings
         raw_value = benefit_data.get('value')
         cleaned_value = None
         if raw_value and raw_value != 'N/A':
+            # Convert all values to strings (Directus expects string values)
             if isinstance(raw_value, float):
-                # Convert float to string and ensure it's shorter than 255 chars
-                cleaned_value = str(raw_value)
-                if len(cleaned_value) > 255:
-                    cleaned_value = cleaned_value[:255]
+                # Convert float to string, removing unnecessary decimal if it's a whole number
+                cleaned_value = str(int(raw_value)) if raw_value.is_integer() else str(raw_value)
             else:
-                # It's a string already, only check for 255 char limit
-                sanitized_value = sanitize_utf8_text(str(raw_value))
-                cleaned_value = sanitized_value[:255] if len(sanitized_value) > 255 else sanitized_value
+                # It's already a string, just sanitize it
+                cleaned_value = sanitize_and_truncate_text(str(raw_value))
+
+        # Use analysis document_reference if available, otherwise fallback to product's document_reference
+        doc_ref = benefit_data.get('document_reference') or fallback_doc_ref
 
         data = {
             'status': 'published',
-            'benefit_name': sanitize_utf8_text(benefit_name),
-            'description': sanitize_utf8_text(benefit_data.get('description')),
+            'benefit_name': sanitize_and_truncate_text(benefit_name),
+            'description': sanitize_and_truncate_text(benefit_data.get('description'), 200),
             'insurance_dcm_segment': segment_id,
             'taxonomy_item_relationship': taxonomy_rel_id,
             'actual_value': cleaned_value,
-            'unit': sanitize_utf8_text(benefit_data.get('unit')) if benefit_data.get('unit') != 'N/A' else None,
-            'document_reference': sanitize_utf8_text(benefit_data.get('document_reference')),
-            'section_reference': sanitize_utf8_text(benefit_data.get('section_reference')),
-            'full_text_part': sanitize_utf8_text(benefit_data.get('full_text_part')),
-            'llm_summary': sanitize_utf8_text(benefit_data.get('llm_summary')),
+            'unit': sanitize_and_truncate_text(benefit_data.get('unit')) if benefit_data.get('unit') != 'N/A' else None,
+            'document_reference': sanitize_and_truncate_text(doc_ref, 200),
+            'section_reference': sanitize_and_truncate_text(benefit_data.get('section_reference'), 200),
+            'full_text_part': sanitize_and_truncate_text(benefit_data.get('full_text_part')),
+            'llm_summary': sanitize_and_truncate_text(benefit_data.get('llm_summary')),
             'extraction_date': datetime.now(timezone.utc).isoformat(),
             'validated_by_human': False
         }
@@ -510,7 +518,7 @@ class DirectusSeeder:
 
     def create_detail_item(self, detail_type: str, detail_key: str, detail_data: Dict[str, Any],
                           product_id: str = None, segment_id: str = None, benefit_id: str = None,
-                          segment_name: str = None, benefit_name: str = None) -> str:
+                          segment_name: str = None, benefit_name: str = None, fallback_doc_ref: str = None) -> str:
         """Create condition, limit, or exclusion entry"""
         collection_map = {
             'conditions': 'insurance_dcm_condition',
@@ -533,22 +541,25 @@ class DirectusSeeder:
             detail_mapping_key = f"{segment_name}_{detail_name}"
             taxonomy_rel_id = self.taxonomy_mappings.get(detail_type, {}).get(detail_mapping_key)
 
+        # Use analysis document_reference if available, otherwise fallback to product's document_reference
+        doc_ref = detail_data.get('document_reference') or fallback_doc_ref
+
         # Base data structure with UTF-8 sanitization
         data = {
             'status': 'published',
             'taxonomy_item_relationship': taxonomy_rel_id,
-            'document_reference': sanitize_utf8_text(detail_data.get('document_reference')),
-            'section_reference': sanitize_utf8_text(detail_data.get('section_reference')),
-            'full_text_part': sanitize_utf8_text(detail_data.get('full_text_part')),
-            'llm_summary': sanitize_utf8_text(detail_data.get('llm_summary')),
+            'document_reference': sanitize_and_truncate_text(doc_ref, 200),
+            'section_reference': sanitize_and_truncate_text(detail_data.get('section_reference'), 200),
+            'full_text_part': sanitize_and_truncate_text(detail_data.get('full_text_part')),
+            'llm_summary': sanitize_and_truncate_text(detail_data.get('llm_summary')),
             'extraction_date': datetime.now(timezone.utc).isoformat(),
             'validated_by_human': False
         }
 
         # Add specific fields and relationships based on detail type
         if detail_type == 'conditions':
-            data['condition_name'] = sanitize_utf8_text(detail_data.get('item_name', detail_key))
-            data['description'] = sanitize_utf8_text(detail_data.get('description'))
+            data['condition_name'] = sanitize_and_truncate_text(detail_data.get('item_name', detail_key))
+            data['description'] = sanitize_and_truncate_text(detail_data.get('description'))
             if product_id:
                 data['dcm_product'] = product_id
             if segment_id:
@@ -557,8 +568,8 @@ class DirectusSeeder:
                 data['insurance_dcm_benefit'] = benefit_id
 
         elif detail_type == 'limits':
-            data['limit_name'] = sanitize_utf8_text(detail_data.get('item_name', detail_key))
-            data['description'] = sanitize_utf8_text(detail_data.get('description'))
+            data['limit_name'] = sanitize_and_truncate_text(detail_data.get('item_name', detail_key))
+            data['description'] = sanitize_and_truncate_text(detail_data.get('description'))
             
             # Handle value attribute - if float use directly, if string clean it
             raw_value = detail_data.get('value')
@@ -582,7 +593,7 @@ class DirectusSeeder:
                                 data['limit_value'] = numeric_value
                     except ValueError:
                         # If conversion fails, handle special text values
-                        text_value = sanitize_utf8_text(str(raw_value).strip())
+                        text_value = sanitize_and_truncate_text(str(raw_value).strip())
                         if text_value and text_value not in ['N/A', ',']:
                             # For text values like "Unbegrenzt" (unlimited), store as NULL since it's a numeric field
                             if text_value.lower() in ['unbegrenzt', 'unlimited', 'illimité', 'unlimited coverage']:
@@ -596,7 +607,7 @@ class DirectusSeeder:
             else:
                 data['limit_value'] = None
                 
-            data['limit_unit'] = sanitize_utf8_text(detail_data.get('unit'))
+            data['limit_unit'] = sanitize_and_truncate_text(detail_data.get('unit'))
             if product_id:
                 data['dcm_product'] = product_id
             if segment_id:
@@ -605,8 +616,8 @@ class DirectusSeeder:
                 data['insurance_dcm_benefit'] = benefit_id
 
         elif detail_type == 'exclusions':
-            data['exclusion_name'] = sanitize_utf8_text(detail_data.get('item_name', detail_key))
-            data['description'] = sanitize_utf8_text(detail_data.get('description'))
+            data['exclusion_name'] = sanitize_and_truncate_text(detail_data.get('item_name', detail_key))
+            data['description'] = sanitize_and_truncate_text(detail_data.get('description'))
             if product_id:
                 data['dcm_product'] = product_id
             if segment_id:
@@ -628,14 +639,14 @@ class DirectusSeeder:
 
     def process_details(self, details_data: List[Dict], detail_type: str,
                        product_id: str = None, segment_id: str = None, benefit_id: str = None,
-                       segment_name: str = None, benefit_name: str = None):
+                       segment_name: str = None, benefit_name: str = None, fallback_doc_ref: str = None):
         """Process conditions, limits, or exclusions"""
         for detail_item in details_data:
             for detail_key, detail_data in detail_item.items():
                 if detail_data.get('is_included'):
                     self.create_detail_item(detail_type, detail_key, detail_data,
                                           product_id, segment_id, benefit_id,
-                                          segment_name, benefit_name)
+                                          segment_name, benefit_name, fallback_doc_ref)
 
     def seed_analysis_results(self, analysis_results: Dict[str, Any], product_id: str, graphql_url: str, auth_token: str, taxonomy_data=None):
         """Main method to seed all analysis results
@@ -649,6 +660,9 @@ class DirectusSeeder:
         """
         print(f"Starting to seed {product_id} analysis results {'(DRY RUN)' if self.dry_run else ''}")
         print("=" * 60)
+
+        # Initialize fallback document reference
+        fallback_doc_ref = None
 
         # Get DCM ID from existing product and fetch/set taxonomy mappings
         if not self.dry_run:
@@ -665,6 +679,13 @@ class DirectusSeeder:
                     return
                 print(f"✓ Found product with DCM ID: {dcm_id}")
                 
+                # Extract document reference from product for fallback
+                fallback_doc_ref = product_items[0].get('document_reference')
+                if fallback_doc_ref:
+                    print(f"✓ Using product document_reference as fallback: {fallback_doc_ref}")
+                else:
+                    print("⚠ No document_reference found in product")
+                
                 # Use pre-fetched taxonomy data if provided, otherwise fetch fresh data
                 if taxonomy_data:
                     print("Using pre-fetched taxonomy data from analysis phase...")
@@ -678,6 +699,7 @@ class DirectusSeeder:
                 return
         else:
             print(f"[DRY RUN] Would use existing dcm_product: {product_id}")
+            fallback_doc_ref = "document-reference-from-product"  # Mock for dry run
             if taxonomy_data:
                 print("[DRY RUN] Would use pre-fetched taxonomy data")
                 self.set_taxonomy_data(taxonomy_data) 
@@ -701,22 +723,22 @@ class DirectusSeeder:
                     continue
 
                 print(f"\nProcessing segment: {segment_key}")
-                segment_id = self.create_segment(segment_key, segment_data, product_id)
+                segment_id = self.create_segment(segment_key, segment_data, product_id, fallback_doc_ref)
                 segment_name = segment_data.get('item_name', segment_key)
 
                 # Process segment-level details
                 if 'conditions' in segment_data:
                     self.process_details(segment_data['conditions'], 'conditions',
                                        product_id=product_id, segment_id=segment_id,
-                                       segment_name=segment_name)
+                                       segment_name=segment_name, fallback_doc_ref=fallback_doc_ref)
                 if 'limits' in segment_data:
                     self.process_details(segment_data['limits'], 'limits',
                                        product_id=product_id, segment_id=segment_id,
-                                       segment_name=segment_name)
+                                       segment_name=segment_name, fallback_doc_ref=fallback_doc_ref)
                 if 'exclusions' in segment_data:
                     self.process_details(segment_data['exclusions'], 'exclusions',
                                        product_id=product_id, segment_id=segment_id,
-                                       segment_name=segment_name)
+                                       segment_name=segment_name, fallback_doc_ref=fallback_doc_ref)
 
                 # Process benefits within this segment
                 benefits_data = segment_data.get('benefits', [])
@@ -725,22 +747,22 @@ class DirectusSeeder:
                         if not benefit_data.get('is_included'):
                             continue
 
-                        benefit_id = self.create_benefit(benefit_key, benefit_data, segment_id, segment_name)
+                        benefit_id = self.create_benefit(benefit_key, benefit_data, segment_id, segment_name, fallback_doc_ref)
                         benefit_name = benefit_data.get('item_name', benefit_key)
 
                         # Process benefit-level details
                         if 'conditions' in benefit_data:
                             self.process_details(benefit_data['conditions'], 'conditions',
                                                product_id=product_id, segment_id=segment_id, benefit_id=benefit_id,
-                                               segment_name=segment_name, benefit_name=benefit_name)
+                                               segment_name=segment_name, benefit_name=benefit_name, fallback_doc_ref=fallback_doc_ref)
                         if 'limits' in benefit_data:
                             self.process_details(benefit_data['limits'], 'limits',
                                                product_id=product_id, segment_id=segment_id, benefit_id=benefit_id,
-                                               segment_name=segment_name, benefit_name=benefit_name)
+                                               segment_name=segment_name, benefit_name=benefit_name, fallback_doc_ref=fallback_doc_ref)
                         if 'exclusions' in benefit_data:
                             self.process_details(benefit_data['exclusions'], 'exclusions',
                                                product_id=product_id, segment_id=segment_id, benefit_id=benefit_id,
-                                               segment_name=segment_name, benefit_name=benefit_name)
+                                               segment_name=segment_name, benefit_name=benefit_name, fallback_doc_ref=fallback_doc_ref)
 
         print(f"\n✓ Seeding completed {'(DRY RUN)' if self.dry_run else ''}!")
 

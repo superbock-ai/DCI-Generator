@@ -238,12 +238,12 @@ def clean_debug_files(document_name: str, from_tier = None):
 
 class AnalysisResult(BaseModel):
     """Schema for structured extraction of any analysis item (segment, benefit, limit, condition, exclusion) from a document."""
-    section_reference: str = Field(description="Reference or identifier for the section.")
-    full_text_part: str = Field(description="Full text of the section part.")
-    llm_summary: str = Field(description="LLM-generated summary of the section in the language of the input document.")
+    section_reference: str = Field(description="Reference or identifier for the section. Limit to maximum 200 characters.")
+    full_text_part: str = Field(description="Full text of the section part. Limit to maximum 300 characters.")
+    llm_summary: str = Field(description="LLM-generated summary of the section in the language of the input document. Limit to maximum 300 characters.")
     item_name: str = Field(description="Name of the item being analyzed in the language of the input document.")
     is_included: bool = Field(description="Indicates if the item is included.")
-    description: str = Field(description="Description of what this item covers in the language of the input document.")
+    description: str = Field(description="Description of what this item covers in the language of the input document. Limit to maximum 200 characters.")
     unit: str = Field(description="Unit of measurement if applicable (e.g., CHF, days, percentage).")
     value: float = Field(description="Specific value or amount found in the document.")
 
