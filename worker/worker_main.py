@@ -217,7 +217,7 @@ def load_debug_results(document_name: str, tier: str):
 
 def clean_debug_files(document_name: str, from_tier = None):
     """Clean debug files, optionally from a specific tier onwards."""
-    tiers = ["segments", "benefits", "details"]
+    tiers = ["segments", "benefits", "modifiers"]
 
     if from_tier:
         # Find starting index
@@ -234,7 +234,6 @@ def clean_debug_files(document_name: str, from_tier = None):
         if os.path.exists(filename):
             os.remove(filename)
             print(f"🗑️  Deleted debug file: {filename}")
-
 
 class AnalysisResult(BaseModel):
     """Schema for structured extraction of any analysis item (segment, benefit, limit, condition, exclusion) from a document."""
@@ -254,7 +253,7 @@ class DocumentAnalyzer:
     def __init__(self,
                  segment_chunk_size: int = 8,
                  benefit_chunk_size: int = 8,
-                 detail_chunk_size: int = 8,
+                 modifier_chunk_size: int = 8,
                  debug_mode: bool = False,
                  dcm_id: str = None):
         """
@@ -263,20 +262,54 @@ class DocumentAnalyzer:
         Args:
             segment_chunk_size: Number of segments to process in parallel per chunk (default: 8).
             benefit_chunk_size: Number of benefits to process in parallel per chunk (default: 8).
-            detail_chunk_size: Number of details to process in parallel per chunk (default: 3).
-                              Smaller default for details due to token-heavy responses.
+            modifier_chunk_size: Number of modifiers to process in parallel per chunk (default: 3).
+                              Smaller default for modifiers due to token-heavy responses.
             debug_mode: Enable debug mode for saving/loading intermediate results.
             dcm_id: Domain Context Model ID for GraphQL taxonomy queries.
         """
         self.segment_chunk_size = segment_chunk_size
         self.benefit_chunk_size = benefit_chunk_size
-        self.detail_chunk_size = detail_chunk_size
+        self.modifier_chunk_size = modifier_chunk_size
         self.debug_mode = debug_mode
         self.dcm_id = dcm_id
         
-        self.base_system_prompt = """You are an expert for analysing insurance documents.
-                        Your job is to extract relevant information from the document in a structured json format.
-                        You will receive a markdown version of the insurance document and analyse the document for the following information:"""
+        self.base_system_prompt = """Sie sind ein hochspezialisierter Experte für die Analyse von schweizerischen Versicherungs-AVB (Allgemeine Versicherungsbedingungen).
+
+KRITISCHE ANALYSEPRINZIPIEN:
+
+1. VOLLSTÄNDIGKEIT UND GRÜNDLICHKEIT:
+   - Sie MÜSSEN das gesamte Dokument von der ersten bis zur letzten Seite systematisch durcharbeiten
+   - Brechen Sie NIEMALS vorzeitig ab - relevante Informationen können auf der letzten Seite stehen
+   - Allgemeine Bestimmungen, Definitionen oder Ausschlüsse am Ende des Dokuments gelten oft für das gesamte Dokument
+   - Prüfen Sie sowohl spezifische Abschnitte als auch übergreifende Klauseln
+
+2. ABSOLUTE GENAUIGKEIT:
+   - Analysieren Sie AUSSCHLIESSLICH auf Basis der im Dokument explizit vorhandenen Informationen
+   - Machen Sie KEINE Annahmen oder Interpretationen über nicht explizit genannte Sachverhalte
+   - Wenn eine Information nicht eindeutig im Text steht, behandeln Sie sie als "nicht vorhanden"
+   - Verwenden Sie nur die exakten Begriffe und Formulierungen aus dem Originaltext
+
+3. SPRACHVERSTÄNDNIS:
+   - Die Dokumente sind in deutscher Sprache verfasst
+   - Achten Sie auf schweizerische Rechtsterminologie und spezifische Versicherungsbegriffe
+   - Berücksichtigen Sie typische AVB-Strukturen und -Formulierungen
+   - Verstehen Sie den Kontext von Versicherungsklauseln und deren rechtliche Bedeutung
+
+4. STRUKTURIERTE DATENEXTRAKTION:
+   - Extrahieren Sie alle relevanten Informationen in das vorgegebene JSON-Format
+   - Dokumentieren Sie präzise Fundstellen (Abschnittsnummern, Überschriften)
+   - Erfassen Sie den vollständigen Wortlaut relevanter Textpassagen
+   - Quantifizieren Sie Beträge, Fristen und Limits exakt wie angegeben
+
+5. QUALITÄTSSICHERUNG:
+   - Überprüfen Sie Ihre Analyse vor der Rückgabe auf Vollständigkeit
+   - Stellen Sie sicher, dass alle Dokumentabschnitte berücksichtigt wurden
+   - Validieren Sie, dass alle Angaben direkt aus dem Originaltext stammen
+   - Kennzeichnen Sie explizit, wenn bestimmte Informationen nicht auffindbar sind
+
+Die zu analysierenden AVB werden Ihnen als Markdown-formatierter Text in den Benutzernachrichten bereitgestellt.
+
+Ihre Aufgabe ist die präzise, vollständige und dokumentbasierte Analyse der schweizerischen Versicherungs-AVB zur strukturierten Extraktion aller relevanten Versicherungsinformationen."""
 
         # Get configuration from environment variables
         graphql_url = os.getenv("DIRECTUS_URL", "https://app-uat.quinsights.tech") + "/graphql"
@@ -309,12 +342,12 @@ class DocumentAnalyzer:
         self.segment_chains = {}
         self.benefits = {}  # Dict[segment_name, List[benefit_dict]]
         self.benefit_chains = {}
-        self.details = {  # Dict[benefit_key, Dict[detail_type, List[detail_dict]
+        self.modifiers = {  # Dict[benefit_key, Dict[modifier_type, List[modifier_dict]
             'limits': {},
             'conditions': {},
             'exclusions': {}
         }
-        self.detail_chains = {}
+        self.modifier_chains = {}
 
     async def fetch_taxonomy_segments(self) -> List[Dict]:
         """Fetch segment taxonomy items and their benefits from GraphQL endpoint using unified fetcher."""
@@ -325,7 +358,7 @@ class DocumentAnalyzer:
         # Extract data for analysis from the unified fetcher result
         self.segments = self.taxonomy_data.segments
         self.benefits = self.taxonomy_data.benefits
-        self.details = self.taxonomy_data.details
+        self.modifiers = self.taxonomy_data.details  # Keep 'details' from taxonomy but rename locally to 'modifiers'
         
         return self.segments
 
@@ -335,31 +368,42 @@ class DocumentAnalyzer:
         prompt_template = ChatPromptTemplate.from_messages([
             ("system", f"""{self.base_system_prompt}
 
-    Specific Instructions for this segment:
-    {segment_info['llm_instruction']}
+**ZIEL:**
+Analysieren Sie, ob das unten beschriebene Versicherungssegment im vorliegenden AVB-Dokument abgedeckt ist. Falls ja, extrahieren Sie alle relevanten Segmentparameter.
 
-    You are analyzing the document for the presence of the segment: "{segment_info['name']}"
-    Description: {segment_info['description']}
-    Aliases: {segment_info['aliases']}
-    Examples: {segment_info['examples']}
+**ZU ANALYSIERENDES SEGMENT:**
+- **Bezeichnung:** {segment_info['name']}
+- **Beschreibung:** {segment_info['description']}
+- **Alternative Begriffe:** {segment_info['aliases']}
+- **Beispiele:** {segment_info['examples']}
 
-    Analyze the provided insurance document and determine if this segment is covered. If you find coverage for this segment:
-    - Extract the relevant section reference (e.g., section number, heading)
-    - Include the full text of the relevant section
-    - Provide a clear summary of what is covered
-    - Set is_included to true
+**ANALYSEANWEISUNGEN:**
+{segment_info['llm_instruction']}
 
-    If the segment is not covered:
-    - Set is_included to false
-    - Provide a brief explanation in the summary
-    - Use "N/A" for section_reference and full_text_part
+**ANALYSEKRITERIEN:**
+Das Segment ({segment_info['name']}) ist abgedeckt DANN UND NUR DANN (IFF), wenn es explizit im Versicherungsdokument erwähnt oder beschrieben wird.
+- Suchen Sie nach direkten Erwähnungen des Segments oder seiner Synonyme
+- Prüfen Sie Inhaltsverzeichnisse, Abschnittsüberschriften und Textinhalte
+- Berücksichtigen Sie auch indirekte Beschreibungen, die eindeutig auf das Segment hinweisen
 
-    Always set item_name to: "{segment_info['name']}"
-Set description to: A brief description of what this segment covers
-Set unit to: "N/A" (segments typically don't have units)
-Set value to: 0.0 (segments are coverage areas, not specific values)
-    """),
-            ("human", "Document to analyze:\n\n{document_text}")
+**VORGEHEN BEI AUFFINDEN DES SEGMENTS:**
+- Extrahieren Sie die relevante Abschnittsreferenz (z.B. Abschnittsnummer, Überschrift)
+- Erfassen Sie den vollständigen Wortlaut des relevanten Abschnitts
+- Erstellen Sie eine klare Zusammenfassung der Abdeckung
+- Setzen Sie is_included auf true
+
+**VORGEHEN WENN SEGMENT NICHT ABGEDECKT:**
+- Setzen Sie is_included auf false
+- Geben Sie eine kurze Erklärung in der Zusammenfassung
+- Verwenden Sie "N/A" für section_reference und full_text_part
+
+**PFLICHTANGABEN:**
+- Setzen Sie item_name immer auf: "{segment_info['name']}"
+- Setzen Sie description auf: Eine kurze Beschreibung der Segmentabdeckung
+- Setzen Sie unit auf: "N/A" (Segmente haben typischerweise keine Einheiten)
+- Setzen Sie value auf: 0.0 (Segmente sind Abdeckungsbereiche, keine spezifischen Werte)
+            """),
+            ("human", "Zu analysierendes AVB-Dokument:\n\n{document_text}")
         ])
 
         return prompt_template
@@ -370,100 +414,135 @@ Set value to: 0.0 (segments are coverage areas, not specific values)
         prompt_template = ChatPromptTemplate.from_messages([
             ("system", f"""{self.base_system_prompt}
 
-SEGMENT CONTEXT:
-The segment '{benefit_info['segment_name']}' was identified in this document.
-Segment analysis summary: {segment_result.llm_summary}
-Section where segment was found: {segment_result.section_reference}
+**ZIEL:**
+Analysieren Sie, ob die unten beschriebene Leistung innerhalb des identifizierten Segments im vorliegenden AVB-Dokument anwendbar ist. Falls ja, extrahieren Sie alle relevanten Leistungsparameter.
 
-This context helps you understand that the segment exists, but you should analyze the ENTIRE document for the specific benefit described below.
+**SEGMENTKONTEXT:**
+Das Segment '{benefit_info['segment_name']}' wurde in diesem Dokument identifiziert.
+- **Segment-Analysezusammenfassung:** {segment_result.llm_summary}
+- **Fundstelle des Segments:** {segment_result.section_reference}
 
-BENEFIT ANALYSIS INSTRUCTIONS:
+Dieser Kontext hilft Ihnen zu verstehen, dass das Segment existiert, jedoch sollten Sie das GESAMTE Dokument nach der spezifischen Leistung durchsuchen.
+
+**ZU ANALYSIERENDE LEISTUNG:**
+- **Bezeichnung:** {benefit_info['name']}
+- **Beschreibung:** {benefit_info['description']}
+- **Alternative Begriffe:** {benefit_info['aliases']}
+- **Beispiele:** {benefit_info['examples']}
+- **Einheit:** {benefit_info.get('unit', 'N/A')}
+- **Datentyp:** {benefit_info.get('data_type', 'N/A')}
+
+**ANALYSEANWEISUNGEN:**
 {benefit_info['llm_instruction']}
 
-You are analyzing the entire document for the presence of the benefit: "{benefit_info['name']}"
-Description: {benefit_info['description']}
-Aliases: {benefit_info['aliases']}
-Examples: {benefit_info['examples']}
-Unit: {benefit_info.get('unit', 'N/A')}
-Data Type: {benefit_info.get('data_type', 'N/A')}
+**ANALYSEKRITERIEN:**
+Die Leistung ({benefit_info['name']}) ist anwendbar DANN UND NUR DANN (IFF), wenn sie in semantischem Zusammenhang mit dem betreffenden Segment ({benefit_info['segment_name']}) steht.
+- Wenn die Leistung für ein anderes Segment im gesamten Dokument gilt, ist sie HIER, in dieser Instanz, NICHT anwendbar
+- Wenn eine Leistung für ein Segment anwendbar ist, steht sie normalerweise in Verbindung mit Abdeckungsmodifikatoren (Bedingungen, Limits und Ausschlüsse), die in einem späteren Stadium extrahiert werden
+- Leistungen können überall im Dokument erwähnt werden, nicht nur in dem Abschnitt, wo das Segment identifiziert wurde
 
-Analyze the entire insurance document and determine if this specific benefit is covered. Benefits may be mentioned anywhere in the document, not just in the section where the segment was identified.
+**WICHTIGER HINWEIS ZU MODIFIKATOREN:**
+Erwähnen Sie in dieser Analyse KEINE spezifischen Modifikatoren (Bedingungen, Limits, Ausschlüsse). Diese werden in einer separaten Analysestufe behandelt. Konzentrieren Sie sich ausschließlich auf die Grundleistung selbst.
 
-If you find coverage for this benefit:
-- Extract the relevant section reference (e.g., section number, heading)
-- Include the full text of the relevant section where the benefit is described
-- Provide a clear summary of what is covered for this benefit
-- Set is_included to true
+**VORGEHEN BEI AUFFINDEN DER LEISTUNG:**
+- Extrahieren Sie die relevante Abschnittsreferenz (z.B. Abschnittsnummer, Überschrift)
+- Erfassen Sie den vollständigen Wortlaut des relevanten Abschnitts, in dem die Leistung beschrieben wird
+- Erstellen Sie eine klare Zusammenfassung der Leistungsabdeckung
+- Setzen Sie is_included auf true
 
-If the benefit is not covered:
-- Set is_included to false
-- Provide a brief explanation in the summary
-- Use "N/A" for section_reference and full_text_part
+**VORGEHEN WENN LEISTUNG NICHT ANWENDBAR:**
+- Setzen Sie is_included auf false
+- Geben Sie eine kurze Erklärung in der Zusammenfassung
+- Verwenden Sie "N/A" für section_reference und full_text_part
 
-Always set item_name to: "{benefit_info['name']}"
-Set description to: A description of what this specific benefit covers
-Set unit to: The unit from the taxonomy if applicable: "{benefit_info.get('unit', 'N/A')}"
-Set value to: The specific value/amount found in the document for this benefit
-"""),
-            ("human", "Document to analyze:\n\n{document_text}")
+**PFLICHTANGABEN:**
+- Setzen Sie item_name immer auf: "{benefit_info['name']}"
+- Setzen Sie description auf: Eine Beschreibung der spezifischen Leistungsabdeckung
+- Setzen Sie unit auf: Die Einheit aus der Taxonomie falls anwendbar: "{benefit_info.get('unit', 'N/A')}"
+- Setzen Sie value auf: Den spezifischen Wert/Betrag, der im Dokument für diese Leistung gefunden wurde
+
+**QUALITÄTSSICHERUNG FÜR LEISTUNGSANALYSE:**
+1. **VOLLSTÄNDIGKEIT:** Prüfen Sie das gesamte Dokument systematisch nach der Leistung
+2. **GENAUIGKEIT:** Verwenden Sie nur explizit im Text vorhandene Informationen
+3. **SPRACHVERSTÄNDNIS:** Berücksichtigen Sie schweizerische Versicherungsterminologie
+4. **STRUKTURIERTE EXTRAKTION:** Dokumentieren Sie präzise Fundstellen und Wortlaute
+5. **VALIDIERUNG:** Bestätigen Sie den semantischen Zusammenhang mit dem Segment
+            """),
+            ("human", "Zu analysierendes AVB-Dokument:\n\n{document_text}")
         ])
 
         return prompt_template
 
-    def create_detail_prompt(self, detail_info: Dict, segment_result: AnalysisResult, benefit_result: AnalysisResult) -> ChatPromptTemplate:
-        """Create a prompt template for a specific detail (limit/condition/exclusion) with segment and benefit context."""
+    def create_modifier_prompt(self, modifier_info: Dict, segment_result: AnalysisResult, benefit_result: AnalysisResult) -> ChatPromptTemplate:
+        """Create a prompt template for a specific modifier (limit/condition/exclusion) with segment and benefit context."""
 
-        detail_type = detail_info['detail_type']
-        detail_type_title = detail_type.upper()
+        modifier_type = modifier_info['modifier_type']
+        modifier_type_title = modifier_type.upper()
 
         prompt_template = ChatPromptTemplate.from_messages([
             ("system", f"""{self.base_system_prompt}
 
-SEGMENT CONTEXT:
-The segment '{detail_info['segment_name']}' was identified in this document.
-Segment analysis summary: {segment_result.llm_summary}
-Section where segment was found: {segment_result.section_reference}
+**ZIEL:**
+Analysieren Sie, ob der unten beschriebene Modifikator (Bedingung, Limit oder Ausschluss) innerhalb des identifizierten Segments und der identifizierten Leistung im vorliegenden AVB-Dokument anwendbar ist. Falls ja, extrahieren Sie alle erforderlichen Modifikator-Parameter.
 
-BENEFIT CONTEXT:
-The benefit '{detail_info['benefit_name']}' was identified within this segment.
-Benefit analysis summary: {benefit_result.llm_summary}
-Section where benefit was found: {benefit_result.section_reference}
-Benefit coverage description: {benefit_result.description}
-Benefit value found: {benefit_result.value}
-Benefit unit: {benefit_result.unit}
+**SEGMENTKONTEXT:**
+Das Segment '{modifier_info['segment_name']}' wurde in diesem Dokument identifiziert.
+- **Segment-Analysezusammenfassung:** {segment_result.llm_summary}
+- **Fundstelle des Segments:** {segment_result.section_reference}
 
-This context helps you understand the segment and benefit for which you now need to find the details for. The detail is an important aspect of the current benefit. Analyze the ENTIRE document for the specific {detail_type} described below ALWAYS having the current segment and benefit in mind.
+**LEISTUNGSKONTEXT:**
+Die Leistung '{modifier_info['benefit_name']}' wurde innerhalb dieses Segments identifiziert.
+- **Leistungs-Analysezusammenfassung:** {benefit_result.llm_summary}
+- **Fundstelle der Leistung:** {benefit_result.section_reference}
+- **Leistungsbeschreibung:** {benefit_result.description}
+- **Gefundener Leistungswert:** {benefit_result.value}
+- **Leistungseinheit:** {benefit_result.unit}
 
-{detail_type_title} ANALYSIS INSTRUCTIONS:
-{detail_info.get('llm_instruction', f'Look for {detail_type}s related to the {detail_info["benefit_name"]} benefit.')}
+Dieser Kontext hilft Ihnen, das Segment und die Leistung zu verstehen, für die Sie nun die Modifikatoren finden müssen. Der Modifikator ist ein wichtiger Aspekt der aktuellen Leistung. Analysieren Sie das GESAMTE Dokument nach dem spezifischen {modifier_type} unter STÄNDIGER Berücksichtigung des aktuellen Segments und der aktuellen Leistung.
 
-You are analyzing the entire document for the presence of the {detail_type}: "{detail_info['name']}"
-Description: {detail_info['description']}
-Aliases: {detail_info['aliases']}
-Examples: {detail_info['examples']}
-Expected Unit: {detail_info.get('unit', 'N/A')}
-Expected Data Type: {detail_info.get('data_type', 'N/A')}
+**ZU ANALYSIERENDER MODIFIKATOR:**
+- **Bezeichnung:** {modifier_info['name']}
+- **Beschreibung:** {modifier_info['description']}
+- **Alternative Begriffe:** {modifier_info['aliases']}
+- **Beispiele:** {modifier_info['examples']}
+- **Erwartete Einheit:** {modifier_info.get('unit', 'N/A')}
+- **Erwarteter Datentyp:** {modifier_info.get('data_type', 'N/A')}
 
-Analyze the entire insurance document and determine if this specific {detail_type} is mentioned or applies to the {detail_info['benefit_name']} benefit. {detail_type_title}s may be mentioned anywhere in the document, not just where the benefit was identified.
+**ANALYSEANWEISUNGEN FÜR {modifier_type_title}:**
+{modifier_info.get('llm_instruction', f'Suchen Sie nach {modifier_type}n im Zusammenhang mit der {modifier_info["benefit_name"]} Leistung.')}
 
-If you find this {detail_type}:
-- Extract the relevant section reference (e.g., section number, heading)
-- Include the full text of the relevant section where the {detail_type} is described
-- Provide a clear summary of what this {detail_type} specifies
-- Set is_included to true
-- Set description to: What this {detail_type} covers or restricts
-- Set unit to: The unit of measurement found (e.g., CHF, days, percentage) or "N/A"
-- Set value to: The specific value, amount, or condition found in the document
+**ANALYSEKRITERIEN:**
+Der Modifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN (IFF), wenn er in semantischem Zusammenhang mit dem betreffenden Segment ({modifier_info['segment_name']}) steht.
+- Wenn der Modifikator für ein anderes Segment im gesamten Dokument gilt, ist er HIER, in dieser Instanz, NICHT anwendbar
+- Analysieren Sie das gesamte Versicherungsdokument und bestimmen Sie, ob dieser spezifische {modifier_type} erwähnt wird oder auf die {modifier_info['benefit_name']} Leistung zutrifft
+- {modifier_type_title} können überall im Dokument erwähnt werden, nicht nur dort, wo die Leistung identifiziert wurde
 
-If the {detail_type} is not mentioned or doesn't apply:
-- Set is_included to false
-- Provide a brief explanation in the summary
-- Use "N/A" for section_reference, full_text_part, description, and unit
-- Use 0.0 for value
+**VORGEHEN BEI AUFFINDEN DES MODIFIKATORS:**
+- Extrahieren Sie die relevante Abschnittsreferenz (z.B. Abschnittsnummer, Überschrift)
+- Erfassen Sie den vollständigen Wortlaut des relevanten Abschnitts, in dem der {modifier_type} beschrieben wird
+- Erstellen Sie eine klare Zusammenfassung dessen, was dieser {modifier_type} spezifiziert
+- Setzen Sie is_included auf true
+- Setzen Sie description auf: Was dieser {modifier_type} abdeckt oder einschränkt
+- Setzen Sie unit auf: Die gefundene Maßeinheit (z.B. CHF, Tage, Prozent) oder "N/A"
+- Setzen Sie value auf: Den spezifischen Wert, Betrag oder die Bedingung, die im Dokument gefunden wurde
 
-Always set item_name to: "{detail_info['name']}"
-"""),
-            ("human", "Document to analyze:\n\n{document_text}")
+**VORGEHEN WENN MODIFIKATOR NICHT ERWÄHNT ODER NICHT ZUTREFFEND:**
+- Setzen Sie is_included auf false
+- Geben Sie eine kurze Erklärung in der Zusammenfassung
+- Verwenden Sie "N/A" für section_reference, full_text_part, description und unit
+- Verwenden Sie 0.0 für value
+
+**PFLICHTANGABEN:**
+- Setzen Sie item_name immer auf: "{modifier_info['name']}"
+
+**QUALITÄTSSICHERUNG FÜR MODIFIKATOR-ANALYSE:**
+1. **VOLLSTÄNDIGKEIT:** Prüfen Sie das gesamte Dokument systematisch nach dem Modifikator
+2. **GENAUIGKEIT:** Verwenden Sie nur explizit im Text vorhandene Informationen
+3. **SPRACHVERSTÄNDNIS:** Berücksichtigen Sie deutsche Versicherungsterminologie
+4. **STRUKTURIERTE EXTRAKTION:** Dokumentieren Sie präzise Fundstellen und Wortlaute
+5. **VALIDIERUNG:** Bestätigen Sie den semantischen Zusammenhang mit Segment und Leistung
+            """),
+            ("human", "Zu analysierendes AVB-Dokument:\n\n{document_text}")
         ])
 
         return prompt_template
@@ -551,60 +630,62 @@ Always set item_name to: "{detail_info['name']}"
             # Re-raise to trigger retry mechanism
             raise e
 
-    def setup_detail_chains(self, benefit_results: Dict[str, AnalysisResult], segment_results: Dict[str, AnalysisResult]):
-        """Create detail analysis chains for benefits that were found in the document."""
+    def setup_modifier_chains(self, benefit_results: Dict[str, AnalysisResult], segment_results: Dict[str, AnalysisResult]):
+        """Create modifier analysis chains for benefits that were found in the document."""
 
-        self.detail_chains = {}
+        self.modifier_chains = {}
 
-        # Only create detail chains for benefits that exist in the document
+        # Only create modifier chains for benefits that exist in the document
         for benefit_key, benefit_result in benefit_results.items():
             if benefit_result.is_included:
                 # Get corresponding segment result
                 segment_name = self.benefit_chains[benefit_key]['segment_name']
                 segment_result = segment_results[segment_name]
 
-                # Create chains for all details (limits, conditions, exclusions) of this benefit
-                for detail_type in ['limits', 'conditions', 'exclusions']:
-                    details = self.details[detail_type].get(benefit_key, [])
-                    for detail in details:
-                        detail_chain_key = f"{benefit_key}_{detail_type}_{detail['name']}"
-                        prompt = self.create_detail_prompt(detail, segment_result, benefit_result)
+                # Create chains for all modifiers (limits, conditions, exclusions) of this benefit
+                for modifier_type in ['limits', 'conditions', 'exclusions']:
+                    modifiers = self.modifiers[modifier_type].get(benefit_key, [])
+                    for modifier in modifiers:
+                        modifier_chain_key = f"{benefit_key}_{modifier_type}_{modifier['name']}"
+                        # Add modifier_type to the modifier info for the prompt
+                        modifier['modifier_type'] = modifier_type
+                        prompt = self.create_modifier_prompt(modifier, segment_result, benefit_result)
                         chain = prompt | self.llm
-                        self.detail_chains[detail_chain_key] = {
+                        self.modifier_chains[modifier_chain_key] = {
                             'chain': chain,
-                            'detail_info': detail,
-                            'detail_type': detail_type,
+                            'modifier_info': modifier,
+                            'modifier_type': modifier_type,
                             'benefit_key': benefit_key,
                             'segment_name': segment_name
                         }
 
-    async def analyze_details(self, document_text: str) -> Dict[str, AnalysisResult]:
-        """Analyze all details (limits/conditions/exclusions) for included benefits in chunked parallel processing."""
+    async def analyze_modifiers(self, document_text: str) -> Dict[str, AnalysisResult]:
+        """Analyze all modifiers (limits/conditions/exclusions) for included benefits in chunked parallel processing."""
 
-        if not self.detail_chains:
+        if not self.modifier_chains:
             return {}
 
-        print(f"Analyzing {len(self.detail_chains)} details in chunks of {self.detail_chunk_size}...")
+        print(f"Analyzing {len(self.modifier_chains)} modifiers in chunks of {self.modifier_chunk_size}...")
 
-        # Convert detail_chains to list for chunking
-        detail_items = list(self.detail_chains.items())
+        # Convert modifier_chains to list for chunking
+        modifier_items = list(self.modifier_chains.items())
         all_results = {}
 
-        # Process details in chunks
-        for i in range(0, len(detail_items), self.detail_chunk_size):
-            chunk = detail_items[i:i + self.detail_chunk_size]
-            chunk_number = (i // self.detail_chunk_size) + 1
-            total_chunks = (len(detail_items) + self.detail_chunk_size - 1) // self.detail_chunk_size
+        # Process modifiers in chunks
+        for i in range(0, len(modifier_items), self.modifier_chunk_size):
+            chunk = modifier_items[i:i + self.modifier_chunk_size]
+            chunk_number = (i // self.modifier_chunk_size) + 1
+            total_chunks = (len(modifier_items) + self.modifier_chunk_size - 1) // self.modifier_chunk_size
             
-            print(f"  Processing chunk {chunk_number}/{total_chunks} ({len(chunk)} details)...")
+            print(f"  Processing chunk {chunk_number}/{total_chunks} ({len(chunk)} modifiers)...")
 
             # Create parallel runnables for this chunk
-            detail_runnables = {}
-            for detail_key, detail_data in chunk:
-                detail_runnables[detail_key] = detail_data['chain']
+            modifier_runnables = {}
+            for modifier_key, modifier_data in chunk:
+                modifier_runnables[modifier_key] = modifier_data['chain']
                 
             # Process this chunk with retry
-            chunk_results = await self._process_detail_chunk(detail_runnables, document_text)
+            chunk_results = await self._process_modifier_chunk(modifier_runnables, document_text)
             
             # Merge results
             all_results.update(chunk_results)
@@ -619,10 +700,10 @@ Always set item_name to: "{detail_info['name']}"
         retry=retry_if_exception_type((RateLimitError, Exception)),
         before_sleep=lambda retry_state: print(f"    Rate limit hit on chunk, retrying... (attempt {retry_state.attempt_number}/6)")
     )
-    async def _process_detail_chunk(self, detail_runnables: Dict, document_text: str) -> Dict[str, AnalysisResult]:
-        """Process a single chunk of details with retry logic."""
+    async def _process_modifier_chunk(self, modifier_runnables: Dict, document_text: str) -> Dict[str, AnalysisResult]:
+        """Process a single chunk of modifiers with retry logic."""
         # Create RunnableParallel for this chunk
-        parallel_analysis = RunnableParallel(detail_runnables)
+        parallel_analysis = RunnableParallel(modifier_runnables)
         input_data = {"document_text": document_text}
 
         try:
@@ -630,7 +711,7 @@ Always set item_name to: "{detail_info['name']}"
             results = await parallel_analysis.ainvoke(input_data)
             return results
         except Exception as e:
-            print(f"    Error analyzing detail chunk: {e}")
+            print(f"    Error analyzing modifier chunk: {e}")
             # Re-raise to trigger retry mechanism
             raise e
 
@@ -701,13 +782,13 @@ Always set item_name to: "{detail_info['name']}"
 
         print(f"=== Analyzing document: {document_name} ===" + (" (Debug Mode)" if self.debug_mode else ""))
         print(f"Document length: {len(document_text)} characters")
-        print(f"Using chunk sizes: {self.segment_chunk_size} segments, {self.benefit_chunk_size} benefits, {self.detail_chunk_size} details per batch")
+        print(f"Using chunk sizes: {self.segment_chunk_size} segments, {self.benefit_chunk_size} benefits, {self.modifier_chunk_size} modifiers per batch")
 
         # Prepare chunk size metadata for debug files
         chunk_sizes = {
             "segments": self.segment_chunk_size,
             "benefits": self.benefit_chunk_size,
-            "details": self.detail_chunk_size
+            "modifiers": self.modifier_chunk_size
         }
 
         try:
@@ -763,47 +844,47 @@ Always set item_name to: "{detail_info['name']}"
                         if result.is_included:
                             included_benefits.append(benefit_key)
 
-                    # Step 3: Analyze details for included benefits
-                    detail_results = {}
+                    # Step 3: Analyze modifiers for included benefits
+                    modifier_results = {}
                     if included_benefits:
-                        print(f"\nFound {len(included_benefits)} benefit(s). Proceeding to detail analysis...")
+                        print(f"\nFound {len(included_benefits)} benefit(s). Proceeding to modifier analysis...")
 
-                        # Setup detail chains for included benefits
-                        self.setup_detail_chains(benefit_results, segment_results)
+                        # Setup modifier chains for included benefits
+                        self.setup_modifier_chains(benefit_results, segment_results)
 
-                        # Analyze details with debug support
-                        if self.detail_chains:
+                        # Analyze modifiers with debug support
+                        if self.modifier_chains:
                             if self.debug_mode:
-                                detail_results, is_valid = load_debug_results(document_name, "details")
+                                modifier_results, is_valid = load_debug_results(document_name, "modifiers")
 
-                            if detail_results is None or not detail_results:
-                                print(f"🚀 Running detail analysis ({len(self.detail_chains)} details)...")
-                                detail_results = await self.analyze_details(document_text)
+                            if modifier_results is None or not modifier_results:
+                                print(f"🚀 Running modifier analysis ({len(self.modifier_chains)} modifiers)...")
+                                modifier_results = await self.analyze_modifiers(document_text)
                                 
                                 if self.debug_mode:
-                                    save_debug_results(document_name, "details", detail_results, chunk_sizes)
+                                    save_debug_results(document_name, "modifiers", modifier_results, chunk_sizes)
 
-                            # Print detail summary
-                            print(f"\n=== Detail Results Summary for {document_name} ===")
-                            for detail_key, result in detail_results.items():
-                                detail_data = self.detail_chains[detail_key]
-                                segment_name = detail_data['segment_name']
-                                benefit_key = detail_data['benefit_key']
+                            # Print modifier summary
+                            print(f"\n=== Modifier Results Summary for {document_name} ===")
+                            for modifier_key, result in modifier_results.items():
+                                modifier_data = self.modifier_chains[modifier_key]
+                                segment_name = modifier_data['segment_name']
+                                benefit_key = modifier_data['benefit_key']
                                 benefit_name = self.benefit_chains[benefit_key]['benefit_info']['name']
-                                detail_type = detail_data['detail_type']
-                                detail_name = detail_data['detail_info']['name']
+                                modifier_type = modifier_data['modifier_type']
+                                modifier_name = modifier_data['modifier_info']['name']
                                 status = "✓ INCLUDED" if result.is_included else "✗ NOT FOUND"
-                                print(f"  {segment_name} → {benefit_name} → {detail_type}: {detail_name} {status}")
+                                print(f"  {segment_name} → {benefit_name} → {modifier_type}: {modifier_name} {status}")
                         else:
-                            print("No details to analyze for the included benefits.")
+                            print("No modifiers to analyze for the included benefits.")
                     else:
-                        print("No benefits found. Skipping detail analysis.")
+                        print("No benefits found. Skipping modifier analysis.")
                 else:
                     print("No benefits to analyze for the included segments.")
             else:
-                print("No segments found. Skipping benefit and detail analysis.")
+                print("No segments found. Skipping benefit and modifier analysis.")
 
-            # Step 4: Build hierarchical tree structure (unchanged)
+            # Step 4: Build hierarchical tree structure
             tree_structure = {"segments": []}
 
             # Process each segment
@@ -846,35 +927,35 @@ Always set item_name to: "{detail_info['name']}"
                                 }
                             }
 
-                            # Add details (limits, conditions, exclusions) for this benefit
-                            for detail_key, detail_result in detail_results.items():
-                                if detail_key in self.detail_chains:
-                                    detail_data = self.detail_chains[detail_key]
-                                    if (detail_result.is_included and 
-                                        detail_data['benefit_key'] == benefit_key):
+                            # Add modifiers (limits, conditions, exclusions) for this benefit
+                            for modifier_key, modifier_result in modifier_results.items():
+                                if modifier_key in self.modifier_chains:
+                                    modifier_data = self.modifier_chains[modifier_key]
+                                    if (modifier_result.is_included and 
+                                        modifier_data['benefit_key'] == benefit_key):
                                         
-                                        detail_type = detail_data['detail_type']
-                                        detail_name = detail_data['detail_info']['name']
-                                        detail_item = {
-                                            detail_name: {
-                                                "item_name": detail_result.item_name,
-                                                "is_included": detail_result.is_included,
-                                                "section_reference": detail_result.section_reference,
-                                                "full_text_part": detail_result.full_text_part,
-                                                "llm_summary": detail_result.llm_summary,
-                                                "description": detail_result.description,
-                                                "unit": detail_result.unit,
-                                                "value": detail_result.value
+                                        modifier_type = modifier_data['modifier_type']
+                                        modifier_name = modifier_data['modifier_info']['name']
+                                        modifier_item = {
+                                            modifier_name: {
+                                                "item_name": modifier_result.item_name,
+                                                "is_included": modifier_result.is_included,
+                                                "section_reference": modifier_result.section_reference,
+                                                "full_text_part": modifier_result.full_text_part,
+                                                "llm_summary": modifier_result.llm_summary,
+                                                "description": modifier_result.description,
+                                                "unit": modifier_result.unit,
+                                                "value": modifier_result.value
                                             }
                                         }
 
-                                        # Add to appropriate detail category
-                                        if detail_type == "limits":
-                                            benefit_item[benefit_name]["limits"].append(detail_item)
-                                        elif detail_type == "conditions":
-                                            benefit_item[benefit_name]["conditions"].append(detail_item)
-                                        elif detail_type == "exclusions":
-                                            benefit_item[benefit_name]["exclusions"].append(detail_item)
+                                        # Add to appropriate modifier category
+                                        if modifier_type == "limits":
+                                            benefit_item[benefit_name]["limits"].append(modifier_item)
+                                        elif modifier_type == "conditions":
+                                            benefit_item[benefit_name]["conditions"].append(modifier_item)
+                                        elif modifier_type == "exclusions":
+                                            benefit_item[benefit_name]["exclusions"].append(modifier_item)
 
                             segment_item[segment_name]["benefits"].append(benefit_item)
 
@@ -891,13 +972,13 @@ Always set item_name to: "{detail_info['name']}"
 
         print(f"=== Analyzing document: {document_name} ===" + (" (Debug Mode)" if self.debug_mode else ""))
         print(f"Document length: {len(document_text)} characters")
-        print(f"Using chunk sizes: {self.segment_chunk_size} segments, {self.benefit_chunk_size} benefits, {self.detail_chunk_size} details per batch")
+        print(f"Using chunk sizes: {self.segment_chunk_size} segments, {self.benefit_chunk_size} benefits, {self.modifier_chunk_size} modifiers per batch")
 
         # Prepare chunk size metadata for debug files
         chunk_sizes = {
             "segments": self.segment_chunk_size,
             "benefits": self.benefit_chunk_size,
-            "details": self.detail_chunk_size
+            "modifiers": self.modifier_chunk_size
         }
 
         try:
@@ -953,47 +1034,47 @@ Always set item_name to: "{detail_info['name']}"
                         if result.is_included:
                             included_benefits.append(benefit_key)
 
-                    # Step 3: Analyze details for included benefits
-                    detail_results = {}
+                    # Step 3: Analyze modifiers for included benefits
+                    modifier_results = {}
                     if included_benefits:
-                        print(f"\nFound {len(included_benefits)} benefit(s). Proceeding to detail analysis...")
+                        print(f"\nFound {len(included_benefits)} benefit(s). Proceeding to modifier analysis...")
 
-                        # Setup detail chains for included benefits
-                        self.setup_detail_chains(benefit_results, segment_results)
+                        # Setup modifier chains for included benefits
+                        self.setup_modifier_chains(benefit_results, segment_results)
 
-                        # Analyze details with debug support
-                        if self.detail_chains:
+                        # Analyze modifiers with debug support
+                        if self.modifier_chains:
                             if self.debug_mode:
-                                detail_results, is_valid = load_debug_results(document_name, "details")
+                                modifier_results, is_valid = load_debug_results(document_name, "modifiers")
 
-                            if detail_results is None or not detail_results:
-                                print(f"🚀 Running detail analysis ({len(self.detail_chains)} details)...")
-                                detail_results = await self.analyze_details(document_text)
+                            if modifier_results is None or not modifier_results:
+                                print(f"🚀 Running modifier analysis ({len(self.modifier_chains)} modifiers)...")
+                                modifier_results = await self.analyze_modifiers(document_text)
                                 
                                 if self.debug_mode:
-                                    save_debug_results(document_name, "details", detail_results, chunk_sizes)
+                                    save_debug_results(document_name, "modifiers", modifier_results, chunk_sizes)
 
-                            # Print detail summary
-                            print(f"\n=== Detail Results Summary for {document_name} ===")
-                            for detail_key, result in detail_results.items():
-                                detail_data = self.detail_chains[detail_key]
-                                segment_name = detail_data['segment_name']
-                                benefit_key = detail_data['benefit_key']
+                            # Print modifier summary
+                            print(f"\n=== Modifier Results Summary for {document_name} ===")
+                            for modifier_key, result in modifier_results.items():
+                                modifier_data = self.modifier_chains[modifier_key]
+                                segment_name = modifier_data['segment_name']
+                                benefit_key = modifier_data['benefit_key']
                                 benefit_name = self.benefit_chains[benefit_key]['benefit_info']['name']
-                                detail_type = detail_data['detail_type']
-                                detail_name = detail_data['detail_info']['name']
+                                modifier_type = modifier_data['modifier_type']
+                                modifier_name = modifier_data['modifier_info']['name']
                                 status = "✓ INCLUDED" if result.is_included else "✗ NOT FOUND"
-                                print(f"  {segment_name} → {benefit_name} → {detail_type}: {detail_name} {status}")
+                                print(f"  {segment_name} → {benefit_name} → {modifier_type}: {modifier_name} {status}")
                         else:
-                            print("No details to analyze for the included benefits.")
+                            print("No modifiers to analyze for the included benefits.")
                     else:
-                        print("No benefits found. Skipping detail analysis.")
+                        print("No benefits found. Skipping modifier analysis.")
                 else:
                     print("No benefits to analyze for the included segments.")
             else:
-                print("No segments found. Skipping benefit and detail analysis.")
+                print("No segments found. Skipping benefit and modifier analysis.")
 
-            # Step 4: Build hierarchical tree structure (unchanged)
+            # Step 4: Build hierarchical tree structure
             tree_structure = {"segments": []}
 
             # Process each segment
@@ -1036,35 +1117,35 @@ Always set item_name to: "{detail_info['name']}"
                                 }
                             }
 
-                            # Add details (limits, conditions, exclusions) for this benefit
-                            for detail_key, detail_result in detail_results.items():
-                                if detail_key in self.detail_chains:
-                                    detail_data = self.detail_chains[detail_key]
-                                    if (detail_result.is_included and 
-                                        detail_data['benefit_key'] == benefit_key):
+                            # Add modifiers (limits, conditions, exclusions) for this benefit
+                            for modifier_key, modifier_result in modifier_results.items():
+                                if modifier_key in self.modifier_chains:
+                                    modifier_data = self.modifier_chains[modifier_key]
+                                    if (modifier_result.is_included and 
+                                        modifier_data['benefit_key'] == benefit_key):
                                         
-                                        detail_type = detail_data['detail_type']
-                                        detail_name = detail_data['detail_info']['name']
-                                        detail_item = {
-                                            detail_name: {
-                                                "item_name": detail_result.item_name,
-                                                "is_included": detail_result.is_included,
-                                                "section_reference": detail_result.section_reference,
-                                                "full_text_part": detail_result.full_text_part,
-                                                "llm_summary": detail_result.llm_summary,
-                                                "description": detail_result.description,
-                                                "unit": detail_result.unit,
-                                                "value": detail_result.value
+                                        modifier_type = modifier_data['modifier_type']
+                                        modifier_name = modifier_data['modifier_info']['name']
+                                        modifier_item = {
+                                            modifier_name: {
+                                                "item_name": modifier_result.item_name,
+                                                "is_included": modifier_result.is_included,
+                                                "section_reference": modifier_result.section_reference,
+                                                "full_text_part": modifier_result.full_text_part,
+                                                "llm_summary": modifier_result.llm_summary,
+                                                "description": modifier_result.description,
+                                                "unit": modifier_result.unit,
+                                                "value": modifier_result.value
                                             }
                                         }
 
-                                        # Add to appropriate detail category
-                                        if detail_type == "limits":
-                                            benefit_item[benefit_name]["limits"].append(detail_item)
-                                        elif detail_type == "conditions":
-                                            benefit_item[benefit_name]["conditions"].append(detail_item)
-                                        elif detail_type == "exclusions":
-                                            benefit_item[benefit_name]["exclusions"].append(detail_item)
+                                        # Add to appropriate modifier category
+                                        if modifier_type == "limits":
+                                            benefit_item[benefit_name]["limits"].append(modifier_item)
+                                        elif modifier_type == "conditions":
+                                            benefit_item[benefit_name]["conditions"].append(modifier_item)
+                                        elif modifier_type == "exclusions":
+                                            benefit_item[benefit_name]["exclusions"].append(modifier_item)
 
                             segment_item[segment_name]["benefits"].append(benefit_item)
 
@@ -1138,23 +1219,23 @@ Always set item_name to: "{detail_info['name']}"
                                 if benefit_data.get('is_included', False) and full_text != "N/A":
                                     print(f"  Full Text (first 300 chars): {full_text[:300]}...")
 
-                                # Print details for this benefit
-                                for detail_type in ['limits', 'conditions', 'exclusions']:
-                                    details = benefit_data.get(detail_type, [])
-                                    if details:
-                                        print(f"\n    {detail_type.upper()} FOR {benefit_name.upper()}:")
-                                        for detail_item in details:
-                                            for detail_name, detail_data in detail_item.items():
-                                                print(f"\n    --- {detail_type.upper()}: {detail_name.upper()} ---")
-                                                print(f"    Included: {'✓ YES' if detail_data.get('is_included', False) else '✗ NO'}")
-                                                print(f"    Section Reference: {detail_data.get('section_reference', 'N/A')}")
-                                                print(f"    Description: {detail_data.get('description', 'N/A')}")
-                                                print(f"    Summary: {detail_data.get('llm_summary', 'N/A')}")
-                                                print(f"    Unit: {detail_data.get('unit', 'N/A')}")
-                                                print(f"    Value: {detail_data.get('value', 0.0)}")
+                                # Print modifiers for this benefit
+                                for modifier_type in ['limits', 'conditions', 'exclusions']:
+                                    modifiers = benefit_data.get(modifier_type, [])
+                                    if modifiers:
+                                        print(f"\n    {modifier_type.upper()} FOR {benefit_name.upper()}:")
+                                        for modifier_item in modifiers:
+                                            for modifier_name, modifier_data in modifier_item.items():
+                                                print(f"\n    --- {modifier_type.upper()}: {modifier_name.upper()} ---")
+                                                print(f"    Included: {'✓ YES' if modifier_data.get('is_included', False) else '✗ NO'}")
+                                                print(f"    Section Reference: {modifier_data.get('section_reference', 'N/A')}")
+                                                print(f"    Description: {modifier_data.get('description', 'N/A')}")
+                                                print(f"    Summary: {modifier_data.get('llm_summary', 'N/A')}")
+                                                print(f"    Unit: {modifier_data.get('unit', 'N/A')}")
+                                                print(f"    Value: {modifier_data.get('value', 0.0)}")
 
-                                                full_text = detail_data.get('full_text_part', 'N/A')
-                                                if detail_data.get('is_included', False) and full_text != "N/A":
+                                                full_text = modifier_data.get('full_text_part', 'N/A')
+                                                if modifier_data.get('is_included', False) and full_text != "N/A":
                                                     print(f"    Full Text (first 200 chars): {full_text[:200]}...")
         else:
             print(f"\nNo segments were found in the document.")
