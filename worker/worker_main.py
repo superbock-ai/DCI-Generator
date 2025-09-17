@@ -1085,7 +1085,7 @@ Always set item_name to: "{detail_info['name']}"
         # Convert Pydantic models to dictionaries in the new hierarchical structure
         serializable_results = convert_pydantic_to_dict(results)
 
-        with open(filename, 'w', encoding='utf-8') as f:
+        with open('exports/' + filename, 'w', encoding='utf-8') as f:
             json.dump({document_name: serializable_results}, f, indent=2, ensure_ascii=False)
 
         print(f"Results exported to {filename}")
