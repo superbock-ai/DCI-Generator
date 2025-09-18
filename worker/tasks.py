@@ -22,7 +22,7 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
         no_cache (bool): Disable caching for this run (default: False)
         segment_chunks (int): Number of segments to process in parallel per chunk (default: 8)
         benefit_chunks (int): Number of benefits to process in parallel per chunk (default: 8)
-        detail_chunks (int): Number of details to process in parallel per chunk (default: 3)
+        modifier_chunks (int): Number of modifiers to process in parallel per chunk (default: 3)
         debug (bool): Enable debug mode (default: False)
         debug_clean (bool): Delete existing debug files before running (default: False)
         debug_from (str): Force re-run from specific tier (default: None)
@@ -41,7 +41,7 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
             'error': 'product_id is required',
             'num_segments': 0,
             'num_benefits': 0,
-            'num_limits': 0,
+            'num_modifiers': 0,
             'seeding_success': False
         }
 
@@ -50,7 +50,8 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
     no_cache = kwargs.get('no_cache', False)
     segment_chunks = kwargs.get('segment_chunks', 8)
     benefit_chunks = kwargs.get('benefit_chunks', 8)
-    detail_chunks = kwargs.get('detail_chunks', 3)
+    # Support both old and new parameter names for backward compatibility
+    modifier_chunks = kwargs.get('modifier_chunks') or kwargs.get('detail_chunks', 3)
     debug = kwargs.get('debug', False)
     debug_clean = kwargs.get('debug_clean', False)
     debug_from = kwargs.get('debug_from')
@@ -125,16 +126,16 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
 
         self.update_state(state='PROCESSING', meta={'status': 'Setting up analyzer'})
 
-        # Initialize analyzer
+        # Initialize analyzer with corrected parameter name
         analyzer = DocumentAnalyzer(
             segment_chunk_size=segment_chunks,
             benefit_chunk_size=benefit_chunks,
-            detail_chunk_size=detail_chunks,
+            modifier_chunk_size=modifier_chunks,
             debug_mode=debug,
             dcm_id=dcm_id
         )
 
-        # Fetch taxonomy segments, benefits, and details from GraphQL
+        # Fetch taxonomy segments, benefits, and modifiers from GraphQL
         print("Fetching segment taxonomy from GraphQL endpoint...")
         self.update_state(state='PROCESSING', meta={'status': 'Fetching taxonomy data'})
 
@@ -147,22 +148,22 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
 
             print(f"Found {len(analyzer.segments)} segment types:")
             total_benefits = 0
-            total_details = 0
+            total_modifiers = 0
             for segment in analyzer.segments:
                 segment_benefits = len(analyzer.benefits.get(segment['name'], []))
                 total_benefits += segment_benefits
 
-                # Count details for this segment
-                segment_details = 0
+                # Count modifiers for this segment
+                segment_modifiers = 0
                 for benefit in analyzer.benefits.get(segment['name'], []):
                     benefit_key = f"{segment['name']}_{benefit['name']}"
-                    for detail_type in ['limits', 'conditions', 'exclusions']:
-                        segment_details += len(analyzer.details[detail_type].get(benefit_key, []))
-                total_details += segment_details
+                    for modifier_type in ['limits', 'conditions', 'exclusions']:
+                        segment_modifiers += len(analyzer.benefit_modifiers[modifier_type].get(benefit_key, []))
+                total_modifiers += segment_modifiers
 
-                print(f"  - {segment['name']}: {segment['description']} ({segment_benefits} benefits, {segment_details} details)")
+                print(f"  - {segment['name']}: {segment['description']} ({segment_benefits} benefits, {segment_modifiers} modifiers)")
 
-            print(f"Total available for analysis: {total_benefits} benefits, {total_details} details")
+            print(f"Total available for analysis: {total_benefits} benefits, {total_modifiers} modifiers")
 
             # Setup analysis chains
             analyzer.setup_analysis_chains()
@@ -179,9 +180,9 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
         # Count results from dictionary structure
         num_segments = len(results_dict.get("segments", []))
         num_benefits = 0
-        num_limits = 0
+        num_modifiers = 0
         
-        # Count benefits and details from the dictionary structure
+        # Count benefits and modifiers from the enhanced dictionary structure
         for segment_item in results_dict.get("segments", []):
             for segment_name, segment_data in segment_item.items():
                 segment_benefits = segment_data.get("benefits", [])
@@ -189,11 +190,25 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
                 
                 for benefit_item in segment_benefits:
                     for benefit_name, benefit_data in benefit_item.items():
-                        num_limits += len(benefit_data.get("limits", []))
-                        num_limits += len(benefit_data.get("conditions", []))
-                        num_limits += len(benefit_data.get("exclusions", []))
+                        benefit_modifiers = benefit_data.get("benefit_modifiers", {})
+                        num_modifiers += len(benefit_modifiers.get("limits", []))
+                        num_modifiers += len(benefit_modifiers.get("conditions", []))
+                        num_modifiers += len(benefit_modifiers.get("exclusions", []))
 
-        print(f"Analysis completed: {num_segments} segments, {num_benefits} benefits, {num_limits} details")
+        # Also count product-level and segment-level modifiers
+        product_modifiers = results_dict.get("product_modifiers", {})
+        num_modifiers += len(product_modifiers.get("limits", []))
+        num_modifiers += len(product_modifiers.get("conditions", []))
+        num_modifiers += len(product_modifiers.get("exclusions", []))
+
+        for segment_item in results_dict.get("segments", []):
+            for segment_name, segment_data in segment_item.items():
+                segment_modifiers = segment_data.get("segment_modifiers", {})
+                num_modifiers += len(segment_modifiers.get("limits", []))
+                num_modifiers += len(segment_modifiers.get("conditions", []))
+                num_modifiers += len(segment_modifiers.get("exclusions", []))
+
+        print(f"Analysis completed: {num_segments} segments, {num_benefits} benefits, {num_modifiers} modifiers")
 
         # Export results if requested
         if export:
@@ -234,7 +249,7 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
             'success': True,
             'num_segments': num_segments,
             'num_benefits': num_benefits,
-            'num_limits': num_limits,
+            'num_modifiers': num_modifiers,
             'seeding_success': seeding_success,
             'product_id': product_id,
             'product_name': product_name
@@ -260,7 +275,7 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
             'error': error_msg,
             'num_segments': 0,
             'num_benefits': 0,
-            'num_limits': 0,
+            'num_modifiers': 0,
             'seeding_success': False,
             'product_id': product_id
         }

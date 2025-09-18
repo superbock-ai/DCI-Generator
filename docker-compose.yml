@@ -27,12 +27,15 @@ services:
     env_file:
       - .env
     environment:
+      - PYTHONPATH=/app/src:/app
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
+      - ./worker:/app/src
       - ./worker/debug:/app/debug
       - ./worker/exports:/app/exports
+    command: ["python", "/app/src/worker.py"]
     networks:
       - dci-network
     restart: unless-stopped

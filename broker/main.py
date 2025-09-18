@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 import jwt
 from dotenv import load_dotenv
 
@@ -52,11 +52,22 @@ class AnalysisJobRequest(BaseModel):
     no_cache: bool = Field(False, description="Disable caching for this run")
     segment_chunks: int = Field(8, ge=1, le=20, description="Number of segments to process per chunk")
     benefit_chunks: int = Field(8, ge=1, le=20, description="Number of benefits to process per chunk")
-    detail_chunks: int = Field(8, ge=1, le=10, description="Number of details to process per chunk")
+    modifier_chunks: int = Field(8, ge=1, le=10, description="Number of modifiers to process per chunk")
     debug: bool = Field(False, description="Enable debug mode")
     debug_clean: bool = Field(False, description="Clean debug files before running")
     debug_from: Optional[str] = Field(None, description="Force re-run from specific tier")
     dry_run_directus: bool = Field(False, description="Dry run mode for Directus seeding")
+    
+    # Backward compatibility: Accept both parameter names
+    detail_chunks: Optional[int] = Field(None, ge=1, le=10, description="Legacy parameter name for modifier_chunks")
+    
+    @validator('modifier_chunks', pre=True, always=True)
+    def set_modifier_chunks(cls, v, values):
+        """Handle backward compatibility between detail_chunks and modifier_chunks."""
+        detail_chunks = values.get('detail_chunks')
+        if detail_chunks is not None and v == 8:  # 8 is default value
+            return detail_chunks
+        return v
 
 
 class CleanupJobRequest(BaseModel):

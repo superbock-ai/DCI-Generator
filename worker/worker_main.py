@@ -340,14 +340,38 @@ Ihre Aufgabe ist die präzise, vollständige und dokumentbasierte Analyse der sc
 
         self.segments = []
         self.segment_chains = {}
+        
         self.benefits = {}  # Dict[segment_name, List[benefit_dict]]
         self.benefit_chains = {}
-        self.modifiers = {  # Dict[benefit_key, Dict[modifier_type, List[modifier_dict]
+        
+        # EXTENDED MODIFIER ARCHITECTURE: Three-tier modifier support
+        # Product-level modifiers (apply to entire product/policy)
+        self.product_modifiers = {  # Dict[modifier_type, List[modifier_dict]]
+            'limits': [],
+            'conditions': [],
+            'exclusions': []
+        }
+        self.product_modifier_chains = {}
+        
+        # Segment-level modifiers (apply to specific segments)
+        self.segment_modifiers = {  # Dict[segment_name, Dict[modifier_type, List[modifier_dict]]]
             'limits': {},
             'conditions': {},
             'exclusions': {}
         }
-        self.modifier_chains = {}
+        self.segment_modifier_chains = {}
+        
+        # Benefit-level modifiers (apply to specific benefits) - existing implementation
+        self.benefit_modifiers = {  # Dict[benefit_key, Dict[modifier_type, List[modifier_dict]]]
+            'limits': {},
+            'conditions': {},
+            'exclusions': {}
+        }
+        self.benefit_modifier_chains = {}
+        
+        # Legacy compatibility (will be deprecated)
+        self.modifiers = self.benefit_modifiers  # Backward compatibility
+        self.modifier_chains = self.benefit_modifier_chains  # Backward compatibility
 
     async def fetch_taxonomy_segments(self) -> List[Dict]:
         """Fetch segment taxonomy items and their benefits from GraphQL endpoint using unified fetcher."""
@@ -358,7 +382,18 @@ Ihre Aufgabe ist die präzise, vollständige und dokumentbasierte Analyse der sc
         # Extract data for analysis from the unified fetcher result
         self.segments = self.taxonomy_data.segments
         self.benefits = self.taxonomy_data.benefits
-        self.modifiers = self.taxonomy_data.details  # Keep 'details' from taxonomy but rename locally to 'modifiers'
+        
+        # Map taxonomy details to our new three-tier modifier structure
+        # Currently, taxonomy only provides benefit-level modifiers (called "details")
+        self.benefit_modifiers = self.taxonomy_data.details  # Benefit-level modifiers from taxonomy
+        
+        # TODO: In the future, taxonomy should provide product and segment level modifiers
+        # For now, these are empty as taxonomy doesn't provide them yet
+        # self.product_modifiers = self.taxonomy_data.product_modifiers  # When available
+        # self.segment_modifiers = self.taxonomy_data.segment_modifiers  # When available
+        
+        # Legacy compatibility
+        self.modifiers = self.benefit_modifiers
         
         return self.segments
 
@@ -547,6 +582,161 @@ Der Modifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN (IFF),
 
         return prompt_template
 
+    def create_product_modifier_prompt(self, modifier_info: Dict) -> ChatPromptTemplate:
+        """Create a prompt template for a product-level modifier (limit/condition/exclusion) that applies to the entire policy."""
+
+        modifier_type = modifier_info['modifier_type']
+        modifier_type_title = modifier_type.upper()
+
+        prompt_template = ChatPromptTemplate.from_messages([
+            ("system", f"""{self.base_system_prompt}
+
+**ZIEL:**
+Analysieren Sie, ob der unten beschriebene Modifikator (Bedingung, Limit oder Ausschluss) auf PRODUKTEBENE - d.h. für die GESAMTE Police/das gesamte Versicherungsprodukt - im vorliegenden AVB-Dokument anwendbar ist. Falls ja, extrahieren Sie alle erforderlichen Modifikator-Parameter.
+
+**PRODUKTEBENEN-KONTEXT:**
+Sie analysieren einen Modifikator, der sich auf das GESAMTE Versicherungsprodukt/die gesamte Police bezieht, nicht nur auf einzelne Segmente oder Leistungen. Solche Modifikatoren finden sich typischerweise in:
+- Allgemeinen Bestimmungen
+- Übergreifenden Ausschlüssen
+- Produktweiten Limits oder Selbstbehalten  
+- Grundsätzlichen Bedingungen für das gesamte Versicherungsprodukt
+- Definitionen und allgemeinen Klauseln
+
+**ZU ANALYSIERENDER PRODUKTMODIFIKATOR:**
+- **Bezeichnung:** {modifier_info['name']}
+- **Beschreibung:** {modifier_info['description']}
+- **Alternative Begriffe:** {modifier_info['aliases']}
+- **Beispiele:** {modifier_info['examples']}
+- **Erwartete Einheit:** {modifier_info.get('unit', 'N/A')}
+- **Erwarteter Datentyp:** {modifier_info.get('data_type', 'N/A')}
+
+**ANALYSEANWEISUNGEN FÜR PRODUKT-{modifier_type_title}:**
+{modifier_info.get('llm_instruction', f'Suchen Sie nach produktweiten {modifier_type}n, die für das gesamte Versicherungsprodukt gelten.')}
+
+**ANALYSEKRITERIEN:**
+Der Produktmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN (IFF), wenn er sich auf das GESAMTE Versicherungsprodukt bezieht und nicht nur auf spezifische Segmente oder Leistungen.
+- Analysieren Sie das gesamte Versicherungsdokument systematisch von Anfang bis Ende
+- Achten Sie besonders auf allgemeine Bestimmungen, Definitionen und übergreifende Klauseln
+- Produktweite {modifier_type}s können überall im Dokument erwähnt werden
+- Unterscheiden Sie klar zwischen produktweiten und segment-/leistungsspezifischen Modifikatoren
+
+**TYPISCHE FUNDSTELLEN FÜR PRODUKTMODIFIKATOREN:**
+- Allgemeine Bestimmungen
+- Übergreifende Ausschlüsse
+- Grundsätzliche Versicherungsbedingungen
+- Produktdefinitionen
+- Allgemeine Limits und Selbstbehalte
+- Übergreifende zeitliche oder territoriale Einschränkungen
+
+**VORGEHEN BEI AUFFINDEN DES PRODUKTMODIFIKATORS:**
+- Extrahieren Sie die relevante Abschnittsreferenz (z.B. Abschnittsnummer, Überschrift)
+- Erfassen Sie den vollständigen Wortlaut des relevanten Abschnitts, in dem der {modifier_type} beschrieben wird
+- Erstellen Sie eine klare Zusammenfassung dessen, was dieser produktweite {modifier_type} spezifiziert
+- Setzen Sie is_included auf true
+- Setzen Sie description auf: Was dieser produktweite {modifier_type} abdeckt oder einschränkt
+- Setzen Sie unit auf: Die gefundene Maßeinheit (z.B. CHF, Tage, Prozent) oder "N/A"
+- Setzen Sie value auf: Den spezifischen Wert, Betrag oder die Bedingung, die im Dokument gefunden wurde
+
+**VORGEHEN WENN PRODUKTMODIFIKATOR NICHT ERWÄHNT ODER NICHT ZUTREFFEND:**
+- Setzen Sie is_included auf false
+- Geben Sie eine kurze Erklärung in der Zusammenfassung
+- Verwenden Sie "N/A" für section_reference, full_text_part, description und unit
+- Verwenden Sie 0.0 für value
+
+**PFLICHTANGABEN:**
+- Setzen Sie item_name immer auf: "{modifier_info['name']}"
+
+**QUALITÄTSSICHERUNG FÜR PRODUKTMODIFIKATOR-ANALYSE:**
+1. **VOLLSTÄNDIGKEIT:** Prüfen Sie das gesamte Dokument systematisch nach dem Produktmodifikator
+2. **GENAUIGKEIT:** Verwenden Sie nur explizit im Text vorhandene Informationen
+3. **PRODUKTEBENEN-FOKUS:** Stellen Sie sicher, dass der Modifikator wirklich produktweit gilt
+4. **SPRACHVERSTÄNDNIS:** Berücksichtigen Sie deutsche Versicherungsterminologie
+5. **STRUKTURIERTE EXTRAKTION:** Dokumentieren Sie präzise Fundstellen und Wortlaute
+            """),
+            ("human", "Zu analysierendes AVB-Dokument:\\n\\n{document_text}")
+        ])
+
+        return prompt_template
+
+    def create_segment_modifier_prompt(self, modifier_info: Dict, segment_result: AnalysisResult) -> ChatPromptTemplate:
+        """Create a prompt template for a segment-level modifier (limit/condition/exclusion) with segment context."""
+
+        modifier_type = modifier_info['modifier_type']
+        modifier_type_title = modifier_type.upper()
+
+        prompt_template = ChatPromptTemplate.from_messages([
+            ("system", f"""{self.base_system_prompt}
+
+**ZIEL:**
+Analysieren Sie, ob der unten beschriebene Modifikator (Bedingung, Limit oder Ausschluss) auf SEGMENTEBENE - d.h. für das gesamte identifizierte Segment, aber nicht für das gesamte Produkt - im vorliegenden AVB-Dokument anwendbar ist. Falls ja, extrahieren Sie alle erforderlichen Modifikator-Parameter.
+
+**SEGMENTKONTEXT:**
+Das Segment '{modifier_info['segment_name']}' wurde in diesem Dokument identifiziert.
+- **Segment-Analysezusammenfassung:** {segment_result.llm_summary}
+- **Fundstelle des Segments:** {segment_result.section_reference}
+- **Segmentbeschreibung:** {segment_result.description}
+- **Gefundener Segmentwert:** {segment_result.value}
+- **Segmenteinheit:** {segment_result.unit}
+
+Sie analysieren einen Modifikator, der sich auf das GESAMTE SEGMENT bezieht, nicht nur auf einzelne Leistungen innerhalb des Segments, aber auch nicht auf das gesamte Versicherungsprodukt. Solche segmentweiten Modifikatoren gelten für ALLE Leistungen innerhalb dieses Segments.
+
+**ZU ANALYSIERENDER SEGMENTMODIFIKATOR:**
+- **Bezeichnung:** {modifier_info['name']}
+- **Beschreibung:** {modifier_info['description']}
+- **Alternative Begriffe:** {modifier_info['aliases']}
+- **Beispiele:** {modifier_info['examples']}
+- **Erwartete Einheit:** {modifier_info.get('unit', 'N/A')}
+- **Erwarteter Datentyp:** {modifier_info.get('data_type', 'N/A')}
+
+**ANALYSEANWEISUNGEN FÜR SEGMENT-{modifier_type_title}:**
+{modifier_info.get('llm_instruction', f'Suchen Sie nach {modifier_type}n, die für das gesamte {modifier_info["segment_name"]}-Segment gelten.')}
+
+**ANALYSEKRITERIEN:**
+Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN (IFF), wenn er sich auf das GESAMTE Segment '{modifier_info['segment_name']}' bezieht, aber nicht produktweit gilt.
+- Analysieren Sie das gesamte Versicherungsdokument, wobei Sie sich auf segment-spezifische Bereiche konzentrieren
+- Achten Sie auf Modifikatoren, die explizit für dieses Segment gelten, aber nicht für andere Segmente
+- Der Modifikator muss sich auf das GESAMTE Segment beziehen, nicht nur auf einzelne Leistungen innerhalb des Segments
+- Segmentweite {modifier_type}s können in segment-spezifischen Abschnitten oder in übergreifenden Bestimmungen mit segment-spezifischen Verweisen gefunden werden
+- Unterscheiden Sie klar zwischen segmentweiten, leistungsspezifischen und produktweiten Modifikatoren
+
+**TYPISCHE FUNDSTELLEN FÜR SEGMENTMODIFIKATOREN:**
+- Segment-spezifische Bestimmungen und Bedingungen
+- Übergreifende Ausschlüsse mit segment-spezifischen Verweisen
+- Segment-spezifische Limits und Selbstbehalte
+- Besondere Bestimmungen für das gesamte Segment
+- Segment-spezifische zeitliche oder territoriale Einschränkungen
+
+**VORGEHEN BEI AUFFINDEN DES SEGMENTMODIFIKATORS:**
+- Extrahieren Sie die relevante Abschnittsreferenz (z.B. Abschnittsnummer, Überschrift)
+- Erfassen Sie den vollständigen Wortlaut des relevanten Abschnitts, in dem der {modifier_type} beschrieben wird
+- Erstellen Sie eine klare Zusammenfassung dessen, was dieser segmentweite {modifier_type} spezifiziert
+- Setzen Sie is_included auf true
+- Setzen Sie description auf: Was dieser segmentweite {modifier_type} für das gesamte Segment abdeckt oder einschränkt
+- Setzen Sie unit auf: Die gefundene Maßeinheit (z.B. CHF, Tage, Prozent) oder "N/A"
+- Setzen Sie value auf: Den spezifischen Wert, Betrag oder die Bedingung, die im Dokument gefunden wurde
+
+**VORGEHEN WENN SEGMENTMODIFIKATOR NICHT ERWÄHNT ODER NICHT ZUTREFFEND:**
+- Setzen Sie is_included auf false
+- Geben Sie eine kurze Erklärung in der Zusammenfassung
+- Verwenden Sie "N/A" für section_reference, full_text_part, description und unit
+- Verwenden Sie 0.0 für value
+
+**PFLICHTANGABEN:**
+- Setzen Sie item_name immer auf: "{modifier_info['name']}"
+
+**QUALITÄTSSICHERUNG FÜR SEGMENTMODIFIKATOR-ANALYSE:**
+1. **VOLLSTÄNDIGKEIT:** Prüfen Sie das gesamte Dokument systematisch nach dem Segmentmodifikator
+2. **GENAUIGKEIT:** Verwenden Sie nur explizit im Text vorhandene Informationen
+3. **SEGMENTEBENEN-FOKUS:** Stellen Sie sicher, dass der Modifikator wirklich segmentweit gilt
+4. **SPRACHVERSTÄNDNIS:** Berücksichtigen Sie deutsche Versicherungsterminologie
+5. **STRUKTURIERTE EXTRAKTION:** Dokumentieren Sie präzise Fundstellen und Wortlaute
+6. **KONTEXTVALIDIERUNG:** Bestätigen Sie den semantischen Zusammenhang mit dem spezifischen Segment
+            """),
+            ("human", "Zu analysierendes AVB-Dokument:\\n\\n{document_text}")
+        ])
+
+        return prompt_template
+
     def setup_analysis_chains(self):
         """Create analysis chains for all segments."""
 
@@ -631,11 +821,18 @@ Der Modifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN (IFF),
             raise e
 
     def setup_modifier_chains(self, benefit_results: Dict[str, AnalysisResult], segment_results: Dict[str, AnalysisResult]):
-        """Create modifier analysis chains for benefits that were found in the document."""
+        """Create benefit-level modifier analysis chains for benefits that were found in the document.
+        
+        NOTE: This method is maintained for backward compatibility and delegates to setup_benefit_modifier_chains.
+        """
+        self.setup_benefit_modifier_chains(benefit_results, segment_results)
 
-        self.modifier_chains = {}
+    def setup_benefit_modifier_chains(self, benefit_results: Dict[str, AnalysisResult], segment_results: Dict[str, AnalysisResult]):
+        """Create benefit-level modifier analysis chains for benefits that were found in the document."""
 
-        # Only create modifier chains for benefits that exist in the document
+        self.benefit_modifier_chains = {}
+
+        # Only create benefit modifier chains for benefits that exist in the document
         for benefit_key, benefit_result in benefit_results.items():
             if benefit_result.is_included:
                 # Get corresponding segment result
@@ -644,31 +841,89 @@ Der Modifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN (IFF),
 
                 # Create chains for all modifiers (limits, conditions, exclusions) of this benefit
                 for modifier_type in ['limits', 'conditions', 'exclusions']:
-                    modifiers = self.modifiers[modifier_type].get(benefit_key, [])
+                    modifiers = self.benefit_modifiers[modifier_type].get(benefit_key, [])
                     for modifier in modifiers:
-                        modifier_chain_key = f"{benefit_key}_{modifier_type}_{modifier['name']}"
+                        modifier_chain_key = f"benefit_{benefit_key}_{modifier_type}_{modifier['name']}"
                         # Add modifier_type to the modifier info for the prompt
                         modifier['modifier_type'] = modifier_type
                         prompt = self.create_modifier_prompt(modifier, segment_result, benefit_result)
                         chain = prompt | self.llm
-                        self.modifier_chains[modifier_chain_key] = {
+                        self.benefit_modifier_chains[modifier_chain_key] = {
                             'chain': chain,
                             'modifier_info': modifier,
                             'modifier_type': modifier_type,
                             'benefit_key': benefit_key,
-                            'segment_name': segment_name
+                            'segment_name': segment_name,
+                            'level': 'benefit'
+                        }
+
+        # Update legacy compatibility alias
+        self.modifier_chains = self.benefit_modifier_chains
+
+    def setup_product_modifier_chains(self):
+        """Create product-level modifier analysis chains that apply to the entire policy."""
+
+        self.product_modifier_chains = {}
+
+        # Create chains for all product-level modifiers (limits, conditions, exclusions)
+        for modifier_type in ['limits', 'conditions', 'exclusions']:
+            modifiers = self.product_modifiers[modifier_type]
+            for modifier in modifiers:
+                modifier_chain_key = f"product_{modifier_type}_{modifier['name']}"
+                # Add modifier_type to the modifier info for the prompt
+                modifier['modifier_type'] = modifier_type
+                prompt = self.create_product_modifier_prompt(modifier)
+                chain = prompt | self.llm
+                self.product_modifier_chains[modifier_chain_key] = {
+                    'chain': chain,
+                    'modifier_info': modifier,
+                    'modifier_type': modifier_type,
+                    'level': 'product'
+                }
+
+    def setup_segment_modifier_chains(self, segment_results: Dict[str, AnalysisResult]):
+        """Create segment-level modifier analysis chains for segments that were found in the document."""
+
+        self.segment_modifier_chains = {}
+
+        # Only create segment modifier chains for segments that exist in the document
+        for segment_name, segment_result in segment_results.items():
+            if segment_result.is_included:
+                # Create chains for all modifiers (limits, conditions, exclusions) of this segment
+                for modifier_type in ['limits', 'conditions', 'exclusions']:
+                    modifiers = self.segment_modifiers[modifier_type].get(segment_name, [])
+                    for modifier in modifiers:
+                        modifier_chain_key = f"segment_{segment_name}_{modifier_type}_{modifier['name']}"
+                        # Add modifier_type and segment_name to the modifier info for the prompt
+                        modifier['modifier_type'] = modifier_type
+                        modifier['segment_name'] = segment_name
+                        prompt = self.create_segment_modifier_prompt(modifier, segment_result)
+                        chain = prompt | self.llm
+                        self.segment_modifier_chains[modifier_chain_key] = {
+                            'chain': chain,
+                            'modifier_info': modifier,
+                            'modifier_type': modifier_type,
+                            'segment_name': segment_name,
+                            'level': 'segment'
                         }
 
     async def analyze_modifiers(self, document_text: str) -> Dict[str, AnalysisResult]:
-        """Analyze all modifiers (limits/conditions/exclusions) for included benefits in chunked parallel processing."""
+        """Analyze all benefit-level modifiers (limits/conditions/exclusions) for included benefits in chunked parallel processing.
+        
+        NOTE: This method is maintained for backward compatibility and delegates to analyze_benefit_modifiers.
+        """
+        return await self.analyze_benefit_modifiers(document_text)
 
-        if not self.modifier_chains:
+    async def analyze_benefit_modifiers(self, document_text: str) -> Dict[str, AnalysisResult]:
+        """Analyze all benefit-level modifiers (limits/conditions/exclusions) for included benefits in chunked parallel processing."""
+
+        if not self.benefit_modifier_chains:
             return {}
 
-        print(f"Analyzing {len(self.modifier_chains)} modifiers in chunks of {self.modifier_chunk_size}...")
+        print(f"Analyzing {len(self.benefit_modifier_chains)} benefit-level modifiers in chunks of {self.modifier_chunk_size}...")
 
-        # Convert modifier_chains to list for chunking
-        modifier_items = list(self.modifier_chains.items())
+        # Convert benefit_modifier_chains to list for chunking
+        modifier_items = list(self.benefit_modifier_chains.items())
         all_results = {}
 
         # Process modifiers in chunks
@@ -677,7 +932,7 @@ Der Modifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN (IFF),
             chunk_number = (i // self.modifier_chunk_size) + 1
             total_chunks = (len(modifier_items) + self.modifier_chunk_size - 1) // self.modifier_chunk_size
             
-            print(f"  Processing chunk {chunk_number}/{total_chunks} ({len(chunk)} modifiers)...")
+            print(f"  Processing benefit modifier chunk {chunk_number}/{total_chunks} ({len(chunk)} modifiers)...")
 
             # Create parallel runnables for this chunk
             modifier_runnables = {}
@@ -690,7 +945,77 @@ Der Modifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN (IFF),
             # Merge results
             all_results.update(chunk_results)
             
-            print(f"  ✅ Completed chunk {chunk_number}/{total_chunks}")
+            print(f"  ✅ Completed benefit modifier chunk {chunk_number}/{total_chunks}")
+
+        return all_results
+
+    async def analyze_product_modifiers(self, document_text: str) -> Dict[str, AnalysisResult]:
+        """Analyze all product-level modifiers (limits/conditions/exclusions) in chunked parallel processing."""
+
+        if not self.product_modifier_chains:
+            return {}
+
+        print(f"Analyzing {len(self.product_modifier_chains)} product-level modifiers in chunks of {self.modifier_chunk_size}...")
+
+        # Convert product_modifier_chains to list for chunking
+        modifier_items = list(self.product_modifier_chains.items())
+        all_results = {}
+
+        # Process modifiers in chunks
+        for i in range(0, len(modifier_items), self.modifier_chunk_size):
+            chunk = modifier_items[i:i + self.modifier_chunk_size]
+            chunk_number = (i // self.modifier_chunk_size) + 1
+            total_chunks = (len(modifier_items) + self.modifier_chunk_size - 1) // self.modifier_chunk_size
+            
+            print(f"  Processing product modifier chunk {chunk_number}/{total_chunks} ({len(chunk)} modifiers)...")
+
+            # Create parallel runnables for this chunk
+            modifier_runnables = {}
+            for modifier_key, modifier_data in chunk:
+                modifier_runnables[modifier_key] = modifier_data['chain']
+                
+            # Process this chunk with retry
+            chunk_results = await self._process_modifier_chunk(modifier_runnables, document_text)
+            
+            # Merge results
+            all_results.update(chunk_results)
+            
+            print(f"  ✅ Completed product modifier chunk {chunk_number}/{total_chunks}")
+
+        return all_results
+
+    async def analyze_segment_modifiers(self, document_text: str) -> Dict[str, AnalysisResult]:
+        """Analyze all segment-level modifiers (limits/conditions/exclusions) in chunked parallel processing."""
+
+        if not self.segment_modifier_chains:
+            return {}
+
+        print(f"Analyzing {len(self.segment_modifier_chains)} segment-level modifiers in chunks of {self.modifier_chunk_size}...")
+
+        # Convert segment_modifier_chains to list for chunking
+        modifier_items = list(self.segment_modifier_chains.items())
+        all_results = {}
+
+        # Process modifiers in chunks
+        for i in range(0, len(modifier_items), self.modifier_chunk_size):
+            chunk = modifier_items[i:i + self.modifier_chunk_size]
+            chunk_number = (i // self.modifier_chunk_size) + 1
+            total_chunks = (len(modifier_items) + self.modifier_chunk_size - 1) // self.modifier_chunk_size
+            
+            print(f"  Processing segment modifier chunk {chunk_number}/{total_chunks} ({len(chunk)} modifiers)...")
+
+            # Create parallel runnables for this chunk
+            modifier_runnables = {}
+            for modifier_key, modifier_data in chunk:
+                modifier_runnables[modifier_key] = modifier_data['chain']
+                
+            # Process this chunk with retry
+            chunk_results = await self._process_modifier_chunk(modifier_runnables, document_text)
+            
+            # Merge results
+            all_results.update(chunk_results)
+            
+            print(f"  ✅ Completed segment modifier chunk {chunk_number}/{total_chunks}")
 
         return all_results
 
@@ -769,7 +1094,7 @@ Der Modifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN (IFF),
             raise e
 
     async def analyze_document(self, document_path: str) -> Dict:
-        """Analyze a single document for all segments and benefits in parallel with debug support."""
+        """Analyze a single document for all segments and benefits in parallel with comprehensive three-tier modifier support and debug functionality."""
 
         # Load the document
         if not os.path.exists(document_path):
@@ -844,30 +1169,89 @@ Der Modifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN (IFF),
                         if result.is_included:
                             included_benefits.append(benefit_key)
 
-                    # Step 3: Analyze modifiers for included benefits
-                    modifier_results = {}
-                    if included_benefits:
-                        print(f"\nFound {len(included_benefits)} benefit(s). Proceeding to modifier analysis...")
+                    # Step 3: THREE-TIER MODIFIER ANALYSIS
+                    print(f"\n=== Three-Tier Modifier Analysis for {document_name} ===")
 
-                        # Setup modifier chains for included benefits
-                        self.setup_modifier_chains(benefit_results, segment_results)
+                    # Step 3a: Product-level modifiers
+                    print(f"🔄 Step 3a: Product-level modifiers...")
+                    self.setup_product_modifier_chains()
+                    
+                    product_modifier_results = {}
+                    if self.product_modifier_chains:
+                        if self.debug_mode:
+                            product_modifier_results, is_valid = load_debug_results(document_name, "product_modifiers")
 
-                        # Analyze modifiers with debug support
-                        if self.modifier_chains:
+                        if product_modifier_results is None or not product_modifier_results:
+                            print(f"🚀 Running product modifier analysis ({len(self.product_modifier_chains)} product modifiers)...")
+                            product_modifier_results = await self.analyze_product_modifiers(document_text)
+                            
                             if self.debug_mode:
-                                modifier_results, is_valid = load_debug_results(document_name, "modifiers")
+                                save_debug_results(document_name, "product_modifiers", product_modifier_results, chunk_sizes)
 
-                            if modifier_results is None or not modifier_results:
-                                print(f"🚀 Running modifier analysis ({len(self.modifier_chains)} modifiers)...")
-                                modifier_results = await self.analyze_modifiers(document_text)
+                        # Print product modifier summary
+                        print(f"\n--- Product-Level Modifier Results ---")
+                        for modifier_key, result in product_modifier_results.items():
+                            modifier_data = self.product_modifier_chains[modifier_key]
+                            modifier_type = modifier_data['modifier_type']
+                            modifier_name = modifier_data['modifier_info']['name']
+                            status = "✓ INCLUDED" if result.is_included else "✗ NOT FOUND"
+                            print(f"  PRODUCT → {modifier_type}: {modifier_name} {status}")
+                    else:
+                        print("  No product-level modifiers defined.")
+
+                    # Step 3b: Segment-level modifiers
+                    print(f"\n🔄 Step 3b: Segment-level modifiers...")
+                    self.setup_segment_modifier_chains(segment_results)
+                    
+                    segment_modifier_results = {}
+                    if self.segment_modifier_chains:
+                        if self.debug_mode:
+                            segment_modifier_results, is_valid = load_debug_results(document_name, "segment_modifiers")
+
+                        if segment_modifier_results is None or not segment_modifier_results:
+                            print(f"🚀 Running segment modifier analysis ({len(self.segment_modifier_chains)} segment modifiers)...")
+                            segment_modifier_results = await self.analyze_segment_modifiers(document_text)
+                            
+                            if self.debug_mode:
+                                save_debug_results(document_name, "segment_modifiers", segment_modifier_results, chunk_sizes)
+
+                        # Print segment modifier summary
+                        print(f"\n--- Segment-Level Modifier Results ---")
+                        for modifier_key, result in segment_modifier_results.items():
+                            modifier_data = self.segment_modifier_chains[modifier_key]
+                            segment_name = modifier_data['segment_name']
+                            modifier_type = modifier_data['modifier_type']
+                            modifier_name = modifier_data['modifier_info']['name']
+                            status = "✓ INCLUDED" if result.is_included else "✗ NOT FOUND"
+                            print(f"  {segment_name} → {modifier_type}: {modifier_name} {status}")
+                    else:
+                        print("  No segment-level modifiers to analyze.")
+
+                    # Step 3c: Benefit-level modifiers (existing functionality)
+                    benefit_modifier_results = {}
+                    if included_benefits:
+                        print(f"\n🔄 Step 3c: Benefit-level modifiers...")
+                        print(f"Found {len(included_benefits)} benefit(s). Proceeding to benefit modifier analysis...")
+
+                        # Setup benefit modifier chains for included benefits
+                        self.setup_benefit_modifier_chains(benefit_results, segment_results)
+
+                        # Analyze benefit modifiers with debug support
+                        if self.benefit_modifier_chains:
+                            if self.debug_mode:
+                                benefit_modifier_results, is_valid = load_debug_results(document_name, "benefit_modifiers")
+
+                            if benefit_modifier_results is None or not benefit_modifier_results:
+                                print(f"🚀 Running benefit modifier analysis ({len(self.benefit_modifier_chains)} benefit modifiers)...")
+                                benefit_modifier_results = await self.analyze_benefit_modifiers(document_text)
                                 
                                 if self.debug_mode:
-                                    save_debug_results(document_name, "modifiers", modifier_results, chunk_sizes)
+                                    save_debug_results(document_name, "benefit_modifiers", benefit_modifier_results, chunk_sizes)
 
-                            # Print modifier summary
-                            print(f"\n=== Modifier Results Summary for {document_name} ===")
-                            for modifier_key, result in modifier_results.items():
-                                modifier_data = self.modifier_chains[modifier_key]
+                            # Print benefit modifier summary
+                            print(f"\n--- Benefit-Level Modifier Results ---")
+                            for modifier_key, result in benefit_modifier_results.items():
+                                modifier_data = self.benefit_modifier_chains[modifier_key]
                                 segment_name = modifier_data['segment_name']
                                 benefit_key = modifier_data['benefit_key']
                                 benefit_name = self.benefit_chains[benefit_key]['benefit_info']['name']
@@ -876,16 +1260,55 @@ Der Modifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN (IFF),
                                 status = "✓ INCLUDED" if result.is_included else "✗ NOT FOUND"
                                 print(f"  {segment_name} → {benefit_name} → {modifier_type}: {modifier_name} {status}")
                         else:
-                            print("No modifiers to analyze for the included benefits.")
+                            print("  No benefit-level modifiers to analyze for the included benefits.")
                     else:
-                        print("No benefits found. Skipping modifier analysis.")
+                        print("  No benefits found. Skipping benefit modifier analysis.")
+
+                    # Backward compatibility: Update legacy modifier_results
+                    modifier_results = benefit_modifier_results
                 else:
                     print("No benefits to analyze for the included segments.")
+                    product_modifier_results = {}
+                    segment_modifier_results = {}
+                    benefit_modifier_results = {}
+                    modifier_results = {}
             else:
                 print("No segments found. Skipping benefit and modifier analysis.")
+                benefit_results = {}
+                product_modifier_results = {}
+                segment_modifier_results = {}
+                benefit_modifier_results = {}
+                modifier_results = {}
 
-            # Step 4: Build hierarchical tree structure
-            tree_structure = {"segments": []}
+            # Step 4: Build enhanced hierarchical tree structure with three-tier modifiers
+            tree_structure = {
+                "product_modifiers": {
+                    "limits": [],
+                    "conditions": [],  
+                    "exclusions": []
+                },
+                "segments": []
+            }
+
+            # Add product-level modifiers to tree structure
+            for modifier_key, modifier_result in product_modifier_results.items():
+                if modifier_result.is_included:
+                    modifier_data = self.product_modifier_chains[modifier_key]
+                    modifier_type = modifier_data['modifier_type']
+                    modifier_name = modifier_data['modifier_info']['name']
+                    modifier_item = {
+                        modifier_name: {
+                            "item_name": modifier_result.item_name,
+                            "is_included": modifier_result.is_included,
+                            "section_reference": modifier_result.section_reference,
+                            "full_text_part": modifier_result.full_text_part,
+                            "llm_summary": modifier_result.llm_summary,
+                            "description": modifier_result.description,
+                            "unit": modifier_result.unit,
+                            "value": modifier_result.value
+                        }
+                    }
+                    tree_structure["product_modifiers"][modifier_type].append(modifier_item)
 
             # Process each segment
             for segment_name, segment_result in segment_results.items():
@@ -901,9 +1324,35 @@ Der Modifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN (IFF),
                             "description": segment_result.description,
                             "unit": segment_result.unit,
                             "value": segment_result.value,
+                            "segment_modifiers": {
+                                "limits": [],
+                                "conditions": [],
+                                "exclusions": []
+                            },
                             "benefits": []
                         }
                     }
+
+                    # Add segment-level modifiers
+                    for modifier_key, modifier_result in segment_modifier_results.items():
+                        if modifier_result.is_included:
+                            modifier_data = self.segment_modifier_chains[modifier_key]
+                            if modifier_data['segment_name'] == segment_name:
+                                modifier_type = modifier_data['modifier_type']
+                                modifier_name = modifier_data['modifier_info']['name']
+                                modifier_item = {
+                                    modifier_name: {
+                                        "item_name": modifier_result.item_name,
+                                        "is_included": modifier_result.is_included,
+                                        "section_reference": modifier_result.section_reference,
+                                        "full_text_part": modifier_result.full_text_part,
+                                        "llm_summary": modifier_result.llm_summary,
+                                        "description": modifier_result.description,
+                                        "unit": modifier_result.unit,
+                                        "value": modifier_result.value
+                                    }
+                                }
+                                segment_item[segment_name]["segment_modifiers"][modifier_type].append(modifier_item)
 
                     # Add benefits for this segment
                     for benefit_key, benefit_result in benefit_results.items():
@@ -921,16 +1370,18 @@ Der Modifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN (IFF),
                                     "description": benefit_result.description,
                                     "unit": benefit_result.unit,
                                     "value": benefit_result.value,
-                                    "limits": [],
-                                    "conditions": [],
-                                    "exclusions": []
+                                    "benefit_modifiers": {
+                                        "limits": [],
+                                        "conditions": [],
+                                        "exclusions": []
+                                    }
                                 }
                             }
 
-                            # Add modifiers (limits, conditions, exclusions) for this benefit
-                            for modifier_key, modifier_result in modifier_results.items():
-                                if modifier_key in self.modifier_chains:
-                                    modifier_data = self.modifier_chains[modifier_key]
+                            # Add benefit-level modifiers for this benefit
+                            for modifier_key, modifier_result in benefit_modifier_results.items():
+                                if modifier_key in self.benefit_modifier_chains:
+                                    modifier_data = self.benefit_modifier_chains[modifier_key]
                                     if (modifier_result.is_included and 
                                         modifier_data['benefit_key'] == benefit_key):
                                         
@@ -949,13 +1400,7 @@ Der Modifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN (IFF),
                                             }
                                         }
 
-                                        # Add to appropriate modifier category
-                                        if modifier_type == "limits":
-                                            benefit_item[benefit_name]["limits"].append(modifier_item)
-                                        elif modifier_type == "conditions":
-                                            benefit_item[benefit_name]["conditions"].append(modifier_item)
-                                        elif modifier_type == "exclusions":
-                                            benefit_item[benefit_name]["exclusions"].append(modifier_item)
+                                        benefit_item[benefit_name]["benefit_modifiers"][modifier_type].append(modifier_item)
 
                             segment_item[segment_name]["benefits"].append(benefit_item)
 
