@@ -1,6 +1,6 @@
 # DCI Generator - Scalable Insurance Document Analysis Platform
 
-A production-ready, containerized AI platform for analyzing insurance documents using a three-tier hierarchical approach: **Segments** → **Benefits** → **Details** (limits/conditions/exclusions). Built with Celery workers, Redis queue, and Docker orchestration for scalable processing.
+A production-ready, containerized AI platform for analyzing insurance documents using a three-tier hierarchical approach: **Segments** → **Benefits** → **Modifiers** (limits/conditions/exclusions). Built with Celery workers, Redis queue, and Docker orchestration for scalable processing.
 
 ## 🔍 Overview
 
@@ -8,7 +8,7 @@ The DCI (Domain Context Item) Generator performs intelligent, context-aware anal
 
 1. **Identifying coverage segments** (e.g., luggage coverage, home assistance)
 2. **Finding specific benefits** within discovered segments (e.g., missed connections, emergency purchases)
-3. **Extracting detailed information** about limits, conditions, and exclusions for found benefits
+3. **Extracting modifiers** (limits, conditions, and exclusions) for found benefits
 
 ## 🚀 Features
 
@@ -115,7 +115,7 @@ curl -X POST "http://localhost:8000/jobs/analysis" \
     "debug": true,
     "segment_chunks": 5,
     "benefit_chunks": 4,
-    "detail_chunks": 2,
+    "modifier_chunks": 2,
     "seed_directus": false
   }'
 
@@ -157,7 +157,7 @@ result = analyze_document_task.delay(
     debug=True,
     segment_chunks=5,
     benefit_chunks=4,
-    detail_chunks=2,
+    modifier_chunks=2,
     seed_directus=False
 )
 
@@ -185,10 +185,10 @@ analyze_document_task.delay(
     no_cache=False,                    # Disable LLM caching
     segment_chunks=8,                  # Segments per parallel chunk
     benefit_chunks=8,                  # Benefits per parallel chunk
-    detail_chunks=3,                   # Details per parallel chunk
+    modifier_chunks=3,                 # Modifiers per parallel chunk
     debug=False,                       # Enable debug mode & file saving
     debug_clean=False,                 # Clean debug files before run
-    debug_from=None,                   # Force re-run from tier ('segments'|'benefits'|'details')
+    debug_from=None,                   # Force re-run from tier ('segments'|'benefits'|'modifiers')
     seed_directus=False,               # Seed results to Directus
     dry_run_directus=False            # Dry run seeding (show what would be inserted)
 )
@@ -239,7 +239,7 @@ All job endpoints require JWT authentication via `Authorization: Bearer {token}`
   "no_cache": false,
   "segment_chunks": 8,
   "benefit_chunks": 8,
-  "detail_chunks": 3,
+  "modifier_chunks": 3,
   "debug": false,
   "debug_clean": false,
   "debug_from": null,
@@ -628,10 +628,10 @@ class AnalysisResult(BaseModel):
 | `no_cache` | boolean | false | Disable LLM caching for fresh results |
 | `segment_chunks` | integer | 8 | Segments per parallel chunk |
 | `benefit_chunks` | integer | 8 | Benefits per parallel chunk |
-| `detail_chunks` | integer | 3 | Details per parallel chunk |
+| `modifier_chunks` | integer | 3 | Modifiers per parallel chunk |
 | `debug` | boolean | false | Enable debug mode with file saving |
 | `debug_clean` | boolean | false | Clean debug files before run |
-| `debug_from` | string | null | Force re-run from tier ('segments'/'benefits'/'details') |
+| `debug_from` | string | null | Force re-run from tier ('segments'/'benefits'/'modifiers') |
 | `seed_directus` | boolean | false | Seed analysis results to Directus |
 | `dry_run_directus` | boolean | false | Dry run seeding (preview only) |
 
@@ -647,7 +647,7 @@ class AnalysisResult(BaseModel):
 - **Automatic Save**: Saves intermediate results after each successful analysis tier
 - **Smart Resume**: Automatically loads existing debug files and resumes from last incomplete tier
 - **Flexible Resumption**: Uses existing debug files regardless of chunk size changes between runs
-- **Per-Document Files**: `document_segments.debug.json`, `document_benefits.debug.json`, `document_details.debug.json`
+- **Per-Document Files**: `document_segments.debug.json`, `document_benefits.debug.json`, `document_modifiers.debug.json`
 - **Progress Visibility**: Clear logging shows what's loaded vs. what's running
 - **Failure Recovery**: Resume from failures with different configurations (e.g., smaller chunk sizes)
 
