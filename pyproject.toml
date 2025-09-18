@@ -19,4 +19,5 @@ dependencies = [
     "requests-toolbelt>=1.0.0",
     "tenacity>=9.1.2",
     "uvicorn>=0.35.0",
+    "watchdog>=4.0.0",
 ]

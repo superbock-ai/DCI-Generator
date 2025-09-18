@@ -41,12 +41,36 @@ class DirectusConfig:
 
 
 @dataclass
+class TaxonomyRelationship:
+    """Represents a specific taxonomy relationship with unique UUID"""
+    relationship_id: str  # The unique relationship UUID from parent_relationships[].id
+    taxonomy_item_id: str  # The taxonomy item this relationship points to
+    taxonomy_item_name: str  # Name of the taxonomy item (NOT unique across relationships!)
+    category: str  # category of the related taxonomy item
+    parent_category: str  # category of the parent (context for this relationship)
+
+@dataclass 
+class TaxonomyMappings:
+    """Maps from analysis context to specific relationship UUIDs"""
+    # Key insight: We need to map from analysis context (segment/benefit names from analysis)
+    # to the specific relationship UUID that should be used for Directus
+    # This is NOT a simple name->relationship mapping since names aren't unique
+    segment_relationships: Dict[str, str]  # analysis_segment_key -> relationship_id
+    benefit_relationships: Dict[str, str]  # analysis_benefit_key -> relationship_id  
+    condition_relationships: Dict[str, str]  # analysis_condition_key -> relationship_id
+    limit_relationships: Dict[str, str]  # analysis_limit_key -> relationship_id
+    exclusion_relationships: Dict[str, str]  # analysis_exclusion_key -> relationship_id
+
+@dataclass
 class TaxonomyData:
-    """Unified taxonomy data structure containing both analysis data and relationship mappings"""
+    """Unified taxonomy data structure with relationship-based hierarchy"""
     segments: List[Dict]
-    benefits: Dict[str, List[Dict]]
+    benefits: Dict[str, List[Dict]] 
     details: Dict[str, Dict[str, List[Dict]]]
-    mappings: Dict[str, Dict[str, str]]
+    mappings: TaxonomyMappings
+    relationships: Dict[str, TaxonomyRelationship]  # relationship_id -> full relationship data
+
+
 
 
 class UnifiedTaxonomyFetcher:
@@ -94,21 +118,38 @@ class UnifiedTaxonomyFetcher:
         segments = []
         benefits = {}
         details = {'limits': {}, 'conditions': {}, 'exclusions': {}}
-        mappings = {
-            'segments': {},
-            'benefits': {},
-            'conditions': {},
-            'limits': {},
-            'exclusions': {}
-        }
         
-        # Process taxonomy items
+        # Track all relationships by their unique IDs
+        relationships = {}
+        
+        # Initialize mappings for this specific DCM product
+        segment_relationships = {}
+        benefit_relationships = {}
+        condition_relationships = {}
+        limit_relationships = {}
+        exclusion_relationships = {}
+        
+        # Process taxonomy items - build the relationship hierarchy
         for item in result['taxonomy_items']:
             if item['category'] == 'product_type':
-                for parent_rel in item['parent_relationships']:
-                    segment_item = parent_rel['related_taxonomy_item']
+                # Process segments (direct children of product_type)
+                for segment_rel in item['parent_relationships']:
+                    segment_item = segment_rel['related_taxonomy_item']
                     if segment_item['category'] == 'segment_type':
                         segment_name = segment_item['taxonomy_item_name']
+                        segment_rel_id = segment_rel['id']
+                        
+                        # Store the relationship
+                        relationships[segment_rel_id] = TaxonomyRelationship(
+                            relationship_id=segment_rel_id,
+                            taxonomy_item_id=segment_item['id'],
+                            taxonomy_item_name=segment_name,
+                            category='segment_type',
+                            parent_category='product_type'
+                        )
+                        
+                        # Map segment name to its specific relationship ID for this DCM
+                        segment_relationships[segment_name] = segment_rel_id
                         
                         # Extract segment info for analysis
                         segment_data = {
@@ -121,15 +162,25 @@ class UnifiedTaxonomyFetcher:
                         }
                         segments.append(segment_data)
                         
-                        # Map segment for Directus relationships
-                        mappings['segments'][segment_name] = parent_rel['id']
-                        
                         # Process benefits for this segment
                         segment_benefits = []
                         for benefit_rel in segment_item.get('parent_relationships', []):
                             benefit_item = benefit_rel['related_taxonomy_item']
                             if benefit_item['category'] == 'benefit_type':
                                 benefit_name = benefit_item['taxonomy_item_name']
+                                benefit_rel_id = benefit_rel['id']
+                                
+                                # Store the relationship
+                                relationships[benefit_rel_id] = TaxonomyRelationship(
+                                    relationship_id=benefit_rel_id,
+                                    taxonomy_item_id=benefit_item['id'],
+                                    taxonomy_item_name=benefit_name,
+                                    category='benefit_type',
+                                    parent_category='segment_type'
+                                )
+                                
+                                # Map benefit name to its specific relationship ID for this DCM
+                                benefit_relationships[benefit_name] = benefit_rel_id
                                 
                                 # Extract benefit info for analysis
                                 benefit_data = {
@@ -145,35 +196,47 @@ class UnifiedTaxonomyFetcher:
                                 }
                                 segment_benefits.append(benefit_data)
                                 
-                                # Map benefit for Directus relationships
-                                benefit_key = f"{segment_name}_{benefit_name}"
-                                mappings['benefits'][benefit_key] = benefit_rel['id']
-                                
-                                # Process details (limits, conditions, exclusions)
+                                # Process details for this benefit
                                 self._process_benefit_details(
                                     benefit_item, benefit_name, segment_name, 
-                                    details, mappings
+                                    details, relationships, 
+                                    limit_relationships, condition_relationships, exclusion_relationships
                                 )
                         
                         benefits[segment_name] = segment_benefits
                         
                         # Process segment-level details
                         self._process_segment_details(
-                            segment_item, segment_name, mappings
+                            segment_item, segment_name, relationships,
+                            limit_relationships, condition_relationships, exclusion_relationships
                         )
+        
+        # Create properly typed mappings
+        mappings = TaxonomyMappings(
+            segment_relationships=segment_relationships,
+            benefit_relationships=benefit_relationships,
+            condition_relationships=condition_relationships,
+            limit_relationships=limit_relationships,
+            exclusion_relationships=exclusion_relationships
+        )
         
         # Cache and return the data
         taxonomy_data = TaxonomyData(
             segments=segments,
             benefits=benefits, 
             details=details,
-            mappings=mappings
+            mappings=mappings,
+            relationships=relationships
         )
         self._cached_data = taxonomy_data
         return taxonomy_data
     
     def _process_benefit_details(self, benefit_item: Dict, benefit_name: str, 
-                                segment_name: str, details: Dict, mappings: Dict):
+                            segment_name: str, details: Dict, 
+                            relationships: Dict[str, TaxonomyRelationship],
+                            limit_relationships: Dict[str, str], 
+                            condition_relationships: Dict[str, str], 
+                            exclusion_relationships: Dict[str, str]):
         """Process limits, conditions, and exclusions for a benefit"""
         benefit_key = f"{segment_name}_{benefit_name}"
         
@@ -182,6 +245,19 @@ class UnifiedTaxonomyFetcher:
         for limit_rel in benefit_item.get('benefit_limits', []):
             limit_item = limit_rel['related_taxonomy_item']
             limit_name = limit_item['taxonomy_item_name']
+            limit_rel_id = limit_rel['id']
+            
+            # Store the relationship
+            relationships[limit_rel_id] = TaxonomyRelationship(
+                relationship_id=limit_rel_id,
+                taxonomy_item_id=limit_item['id'],
+                taxonomy_item_name=limit_name,
+                category='limit_type',
+                parent_category='benefit_type'
+            )
+            
+            # Map limit name to its specific relationship ID for this DCM
+            limit_relationships[limit_name] = limit_rel_id
             
             limits.append({
                 'id': limit_item['id'],
@@ -196,10 +272,6 @@ class UnifiedTaxonomyFetcher:
                 'segment_name': segment_name,
                 'detail_type': 'limit'
             })
-            
-            # Map limit for Directus relationships
-            limit_key = f"{segment_name}_{benefit_name}_{limit_name}"
-            mappings['limits'][limit_key] = limit_rel['id']
         
         details['limits'][benefit_key] = limits
         
@@ -208,6 +280,19 @@ class UnifiedTaxonomyFetcher:
         for condition_rel in benefit_item.get('benefit_conditions', []):
             condition_item = condition_rel['related_taxonomy_item']
             condition_name = condition_item['taxonomy_item_name']
+            condition_rel_id = condition_rel['id']
+            
+            # Store the relationship
+            relationships[condition_rel_id] = TaxonomyRelationship(
+                relationship_id=condition_rel_id,
+                taxonomy_item_id=condition_item['id'],
+                taxonomy_item_name=condition_name,
+                category='condition_type',
+                parent_category='benefit_type'
+            )
+            
+            # Map condition name to its specific relationship ID for this DCM
+            condition_relationships[condition_name] = condition_rel_id
             
             conditions.append({
                 'id': condition_item['id'],
@@ -222,10 +307,6 @@ class UnifiedTaxonomyFetcher:
                 'segment_name': segment_name,
                 'detail_type': 'condition'
             })
-            
-            # Map condition for Directus relationships
-            condition_key = f"{segment_name}_{benefit_name}_{condition_name}"
-            mappings['conditions'][condition_key] = condition_rel['id']
         
         details['conditions'][benefit_key] = conditions
         
@@ -234,6 +315,19 @@ class UnifiedTaxonomyFetcher:
         for exclusion_rel in benefit_item.get('benefit_exclusions', []):
             exclusion_item = exclusion_rel['related_taxonomy_item']
             exclusion_name = exclusion_item['taxonomy_item_name']
+            exclusion_rel_id = exclusion_rel['id']
+            
+            # Store the relationship
+            relationships[exclusion_rel_id] = TaxonomyRelationship(
+                relationship_id=exclusion_rel_id,
+                taxonomy_item_id=exclusion_item['id'],
+                taxonomy_item_name=exclusion_name,
+                category='exclusion_type',
+                parent_category='benefit_type'
+            )
+            
+            # Map exclusion name to its specific relationship ID for this DCM
+            exclusion_relationships[exclusion_name] = exclusion_rel_id
             
             exclusions.append({
                 'id': exclusion_item['id'],
@@ -248,36 +342,69 @@ class UnifiedTaxonomyFetcher:
                 'segment_name': segment_name,
                 'detail_type': 'exclusion'
             })
-            
-            # Map exclusion for Directus relationships
-            exclusion_key = f"{segment_name}_{benefit_name}_{exclusion_name}"
-            mappings['exclusions'][exclusion_key] = exclusion_rel['id']
         
         details['exclusions'][benefit_key] = exclusions
     
-    def _process_segment_details(self, segment_item: Dict, segment_name: str, mappings: Dict):
+    def _process_segment_details(self, segment_item: Dict, segment_name: str, 
+                           relationships: Dict[str, TaxonomyRelationship],
+                           limit_relationships: Dict[str, str], 
+                           condition_relationships: Dict[str, str], 
+                           exclusion_relationships: Dict[str, str]):
         """Process segment-level details (conditions, limits, exclusions)"""
         
         # Process segment-level conditions
         for condition_rel in segment_item.get('segment_conditions', []):
             condition_item = condition_rel['related_taxonomy_item']
             condition_name = condition_item['taxonomy_item_name']
-            condition_key = f"{segment_name}_{condition_name}"
-            mappings['conditions'][condition_key] = condition_rel['id']
+            condition_rel_id = condition_rel['id']
+            
+            # Store the relationship
+            relationships[condition_rel_id] = TaxonomyRelationship(
+                relationship_id=condition_rel_id,
+                taxonomy_item_id=condition_item['id'],
+                taxonomy_item_name=condition_name,
+                category='condition_type',
+                parent_category='segment_type'
+            )
+            
+            # Map condition name to its specific relationship ID for this DCM
+            condition_relationships[condition_name] = condition_rel_id
         
         # Process segment-level limits  
         for limit_rel in segment_item.get('segment_limits', []):
             limit_item = limit_rel['related_taxonomy_item']
             limit_name = limit_item['taxonomy_item_name']
-            limit_key = f"{segment_name}_{limit_name}"
-            mappings['limits'][limit_key] = limit_rel['id']
+            limit_rel_id = limit_rel['id']
+            
+            # Store the relationship
+            relationships[limit_rel_id] = TaxonomyRelationship(
+                relationship_id=limit_rel_id,
+                taxonomy_item_id=limit_item['id'],
+                taxonomy_item_name=limit_name,
+                category='limit_type',
+                parent_category='segment_type'
+            )
+            
+            # Map limit name to its specific relationship ID for this DCM
+            limit_relationships[limit_name] = limit_rel_id
         
         # Process segment-level exclusions
         for exclusion_rel in segment_item.get('segment_exclusions', []):
             exclusion_item = exclusion_rel['related_taxonomy_item']
             exclusion_name = exclusion_item['taxonomy_item_name']
-            exclusion_key = f"{segment_name}_{exclusion_name}"
-            mappings['exclusions'][exclusion_key] = exclusion_rel['id']
+            exclusion_rel_id = exclusion_rel['id']
+            
+            # Store the relationship
+            relationships[exclusion_rel_id] = TaxonomyRelationship(
+                relationship_id=exclusion_rel_id,
+                taxonomy_item_id=exclusion_item['id'],
+                taxonomy_item_name=exclusion_name,
+                category='exclusion_type',
+                parent_category='segment_type'
+            )
+            
+            # Map exclusion name to its specific relationship ID for this DCM
+            exclusion_relationships[exclusion_name] = exclusion_rel_id
 
 class DirectusClient:
     """Client for interacting with Directus API"""
@@ -403,71 +530,111 @@ class DirectusSeeder:
             # Fetch the unified taxonomy data
             taxonomy_data = self.taxonomy_fetcher.fetch_taxonomy_data(dcm_id)
             
-            # Extract just the mappings for the seeder
+            # Extract the typed mappings for the seeder
             self.taxonomy_mappings = taxonomy_data.mappings
-            print(f"✓ Loaded taxonomy mappings: {len(self.taxonomy_mappings['segments'])} segments, {len(self.taxonomy_mappings['benefits'])} benefits")
+            print(f"✓ Loaded taxonomy mappings: {len(self.taxonomy_mappings.segments)} segments, {len(self.taxonomy_mappings.benefits)} benefits")
             
         except Exception as e:
             print(f"Error fetching taxonomy mappings: {e}")
             print("Continuing without taxonomy mappings - items may fail to create")
-            self.taxonomy_mappings = {'segments': {}, 'benefits': {}, 'conditions': {}, 'limits': {}, 'exclusions': {}}
+            # Create empty typed mappings as fallback
+            from worker.directus_tools import TaxonomyMappings
+            self.taxonomy_mappings = TaxonomyMappings(
+                segments={}, 
+                benefits={}, 
+                conditions={}, 
+                limits={}, 
+                exclusions={}
+            )
 
-    def set_taxonomy_data(self, taxonomy_data):
+    def set_taxonomy_data(self, taxonomy_data: TaxonomyData):
         """Set pre-fetched taxonomy data from unified fetcher to avoid duplicate GraphQL calls"""
         self.taxonomy_mappings = taxonomy_data.mappings
-        print(f"✓ Using pre-fetched taxonomy mappings: {len(self.taxonomy_mappings['segments'])} segments, {len(self.taxonomy_mappings['benefits'])} benefits")
+        print(f"✓ Using pre-fetched taxonomy mappings: {len(self.taxonomy_mappings.segment_relationships)} segments, {len(self.taxonomy_mappings.benefit_relationships)} benefits")
+
+    def _sanitize_text(self, text: str) -> str:
+        """Sanitize text for UTF-8 encoding and remove problematic characters"""
+        if not text:
+            return ""
+        
+        # Ensure string type
+        if not isinstance(text, str):
+            text = str(text)
+        
+        # Remove null bytes and other problematic characters
+        text = text.replace('\x00', '').replace('\r\n', '\n').replace('\r', '\n')
+        
+        # Ensure proper UTF-8 encoding
+        try:
+            # Encode and decode to ensure clean UTF-8
+            text = text.encode('utf-8', errors='ignore').decode('utf-8')
+        except UnicodeError:
+            # Fallback for problematic strings
+            text = repr(text)[1:-1]  # Use repr but strip quotes
+        
+        return text.strip()
+
+    def _create_item(self, collection: str, data: Dict[str, Any]) -> str:
+        """Create item in Directus collection and return its ID"""
+        if self.dry_run:
+            print(f"[DRY RUN] Would create {collection}: {data.get('segment_name', data.get('benefit_name', data.get('condition_name', data.get('limit_name', data.get('exclusion_name', 'Unknown')))))}")
+            return str(uuid.uuid4())
+        
+        result = self.client.create_item(collection, data)
+        return result['id']
 
 
     def create_segment(self, segment_key: str, segment_data: Dict[str, Any], product_id: str) -> str:
         """Create insurance_dcm_segment entry and return its ID"""
 
-        # Get taxonomy relationship ID for this segment
-        segment_name = segment_data.get('item_name', segment_key)
-        taxonomy_rel_id = self.taxonomy_mappings.get('segments', {}).get(segment_name)
-
+        print(f"\n=== CREATE_SEGMENT DEBUG ===")
+        print(f"segment_key: {segment_key}")
+        print(f"segment_data type: {type(segment_data)}")
+        print(f"segment_data: {segment_data}")
+        
+        # Get taxonomy relationship ID directly from enriched analysis result
+        taxonomy_rel_id = segment_data.get('taxonomy_relationship_id')
+        print(f"taxonomy_rel_id from .get(): {taxonomy_rel_id}")
+        
+        # Also try direct attribute access
+        if hasattr(segment_data, 'taxonomy_relationship_id'):
+            print(f"taxonomy_relationship_id via attr: {segment_data.taxonomy_relationship_id}")
+        
+        # Try dict() method if available
+        if hasattr(segment_data, 'dict'):
+            segment_dict = segment_data.dict()
+            print(f"taxonomy_relationship_id from dict(): {segment_dict.get('taxonomy_relationship_id')}")
+        
+        print(f"=== END DEBUG ===\n")
+        
         if not taxonomy_rel_id:
-            print(f"  ⚠ No taxonomy mapping found for segment: {segment_name}")
-            # Try to find by key if item_name lookup failed
-            taxonomy_rel_id = self.taxonomy_mappings.get('segments', {}).get(segment_key)
+            raise ValueError(f"Taxonomy relationship cannot be null for segment: {segment_data.get('item_name', segment_key)}")
 
+        # Base data structure with UTF-8 sanitization
         data = {
             'status': 'published',
-            'segment_name': sanitize_utf8_text(segment_name),
-            'description': sanitize_utf8_text(segment_data.get('description')),
+            'segment_name': self._sanitize_text(segment_data.get('item_name', segment_key)),
+            'segment_description': self._sanitize_text(segment_data.get('description', '')),
+            'segment_text': self._sanitize_text(segment_data.get('llm_summary', '')),
+            'section_reference': self._sanitize_text(segment_data.get('section_reference', '')),
+            'full_text_part': self._sanitize_text(segment_data.get('full_text_part', '')),
+            'is_included': segment_data.get('is_included', False),
             'dcm_product': product_id,
-            'taxonomy_item_relationship': taxonomy_rel_id,
-            'document_reference': sanitize_utf8_text(segment_data.get('document_reference')),
-            'section_reference': sanitize_utf8_text(segment_data.get('section_reference')),
-            'full_text_part': sanitize_utf8_text(segment_data.get('full_text_part')),
-            'llm_summary': sanitize_utf8_text(segment_data.get('llm_summary')),
-            'extraction_date': datetime.now(timezone.utc).isoformat(),
-            'validated_by_human': False
+            'taxonomy_item_relationship': taxonomy_rel_id
         }
 
-        if self.dry_run:
-            print(f"[DRY RUN] Would create segment: {data['segment_name']}")
-            return str(uuid.uuid4())
-
-        result = self.client.create_item('insurance_dcm_segment', data)
-        segment_id = result['id']
+        segment_id = self._create_item('insurance_dcm_segment', data)
         print(f"  ✓ Created segment: {data['segment_name']} (ID: {segment_id})")
         return segment_id
 
     def create_benefit(self, benefit_key: str, benefit_data: Dict[str, Any], segment_id: str, segment_name: str) -> str:
         """Create insurance_dcm_benefit entry and return its ID"""
 
-        # Get taxonomy relationship ID for this benefit
-        benefit_name = benefit_data.get('item_name', benefit_key)
-        benefit_mapping_key = f"{segment_name}_{benefit_name}"
-        taxonomy_rel_id = self.taxonomy_mappings.get('benefits', {}).get(benefit_mapping_key)
-
+        # Get taxonomy relationship ID directly from enriched analysis result
+        taxonomy_rel_id = benefit_data.get('taxonomy_relationship_id')
+        
         if not taxonomy_rel_id:
-            # Try alternative key combinations
-            alt_key = f"{segment_name}_{benefit_key}"
-            taxonomy_rel_id = self.taxonomy_mappings.get('benefits', {}).get(alt_key)
-
-        if not taxonomy_rel_id:
-            print(f"    ⚠ No taxonomy mapping found for benefit: {benefit_mapping_key}")
+            raise ValueError(f"Taxonomy relationship cannot be null for benefit: {benefit_data.get('item_name', benefit_key)}")
 
         # Handle value attribute - if float convert to string, if string check 255 char limit
         raw_value = benefit_data.get('value')
@@ -483,6 +650,8 @@ class DirectusSeeder:
                 sanitized_value = sanitize_utf8_text(str(raw_value))
                 cleaned_value = sanitized_value[:255] if len(sanitized_value) > 255 else sanitized_value
 
+        benefit_name = benefit_data.get('item_name', benefit_key)
+        
         data = {
             'status': 'published',
             'benefit_name': sanitize_utf8_text(benefit_name),
@@ -509,8 +678,8 @@ class DirectusSeeder:
         return benefit_id
 
     def create_detail_item(self, detail_type: str, detail_key: str, detail_data: Dict[str, Any],
-                          product_id: str = None, segment_id: str = None, benefit_id: str = None,
-                          segment_name: str = None, benefit_name: str = None) -> str:
+                      product_id: str = None, segment_id: str = None, benefit_id: str = None,
+                      segment_name: str = None, benefit_name: str = None) -> str:
         """Create condition, limit, or exclusion entry"""
         collection_map = {
             'conditions': 'insurance_dcm_condition',
@@ -520,18 +689,11 @@ class DirectusSeeder:
 
         collection = collection_map[detail_type]
 
-        # Get taxonomy relationship ID for this detail item
-        detail_name = detail_data.get('item_name', detail_key)
-        taxonomy_rel_id = None
-
-        if benefit_name and segment_name:
-            # Benefit-level detail
-            detail_mapping_key = f"{segment_name}_{benefit_name}_{detail_name}"
-            taxonomy_rel_id = self.taxonomy_mappings.get(detail_type, {}).get(detail_mapping_key)
-        elif segment_name:
-            # Segment-level detail
-            detail_mapping_key = f"{segment_name}_{detail_name}"
-            taxonomy_rel_id = self.taxonomy_mappings.get(detail_type, {}).get(detail_mapping_key)
+        # Get taxonomy relationship ID directly from enriched analysis result
+        taxonomy_rel_id = detail_data.get('taxonomy_relationship_id')
+        
+        if not taxonomy_rel_id:
+            raise ValueError(f"Taxonomy relationship cannot be null for {detail_type[:-1]}: {detail_data.get('item_name', detail_key)}")
 
         # Base data structure with UTF-8 sanitization
         data = {
@@ -684,15 +846,35 @@ class DirectusSeeder:
             else:
                 print("[DRY RUN] Skipping taxonomy mapping fetch")
 
+        print(f"\n=== ANALYSIS_RESULTS DEBUG ===")
+        print(f"analysis_results keys: {list(analysis_results.keys())}")
+        
         # Get the product data
         product_data = analysis_results.get(product_id, {})
+        print(f"product_data keys: {list(product_data.keys())}")
+        
         segments_data = product_data.get('segments', [])
+        print(f"segments_data length: {len(segments_data)}")
+        print(f"segments_data type: {type(segments_data)}")
 
         if not segments_data:
             print("No segments found in analysis results")
             return
 
-        # No tracking needed - we can query Directus directly by product_id
+        # Debug first segment in detail
+        if segments_data:
+            first_segment_item = segments_data[0]
+            print(f"First segment item keys: {list(first_segment_item.keys())}")
+            
+            for segment_key, segment_data in first_segment_item.items():
+                print(f"\nSegment '{segment_key}':")
+                print(f"  Type: {type(segment_data)}")
+                print(f"  Has taxonomy_relationship_id attr: {hasattr(segment_data, 'taxonomy_relationship_id')}")
+                if hasattr(segment_data, 'taxonomy_relationship_id'):
+                    print(f"  taxonomy_relationship_id: {segment_data.taxonomy_relationship_id}")
+                print(f"  get('taxonomy_relationship_id'): {segment_data.get('taxonomy_relationship_id') if hasattr(segment_data, 'get') else 'NO GET METHOD'}")
+                break  # Only debug first segment
+        print(f"=== END ANALYSIS_RESULTS DEBUG ===\n")
 
         # Process each segment
         for segment_item in segments_data:

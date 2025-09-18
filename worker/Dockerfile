@@ -1,5 +1,5 @@
-# Multi-stage build for optimized container size
-FROM python:3.12-slim AS builder
+# Development-friendly Dockerfile with dependency caching
+FROM python:3.12-slim
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
@@ -7,41 +7,12 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 # Set working directory
 WORKDIR /app
 
-# Copy dependency files from parent directory (build context must be parent)
+# Copy dependency files for caching
 COPY pyproject.toml ./
 COPY uv.lock ./
 
-# Install dependencies
+# Pre-install dependencies (will be cached in Docker layer)
 RUN uv sync --frozen --no-cache
-
-# Production stage
-FROM python:3.12-slim
-
-# Install uv in production stage
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
-
-# Set working directory
-WORKDIR /app
-
-# Copy the virtual environment from builder stage
-COPY --from=builder /app/.venv /app/.venv
-
-# Copy project files
-COPY pyproject.toml ./
-COPY uv.lock ./
-
-# Copy worker application code directly to /app
-COPY worker/worker_main.py ./
-COPY worker/directus_tools.py ./
-COPY worker/celery_app.py ./
-COPY worker/tasks.py ./
-COPY worker/worker.py ./
-COPY worker/debug/ ./debug/
-COPY worker/exports/ ./exports/
-COPY worker/graphql/ ./graphql/
-
-# Ensure the virtual environment is in PATH
-ENV PATH="/app/.venv/bin:$PATH"
 
 # Create non-root user for security
 RUN groupadd --gid 1000 worker && \
@@ -53,5 +24,8 @@ RUN chown -R worker:worker /app
 # Switch to non-root user
 USER worker
 
-# Set default command to run Celery worker
-CMD ["python", "worker.py"]
+# Create directories that will be mounted
+RUN mkdir -p /app/worker/debug /app/worker/exports
+
+# Set default command (will be overridden by docker-compose)
+CMD ["python", "worker/worker.py"]

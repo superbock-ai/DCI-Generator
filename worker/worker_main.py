@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 from dotenv import load_dotenv
 from gql import gql, Client
@@ -13,6 +13,7 @@ from langchain_core.runnables import RunnableParallel
 from langchain_core.globals import set_llm_cache
 from langchain_core.caches import InMemoryCache
 from pydantic import BaseModel, Field
+from dataclasses import dataclass
 from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type
 from openai import RateLimitError
 import re
@@ -175,9 +176,9 @@ def save_debug_results(document_name: str, tier: str, results: dict, chunk_sizes
         "results": {}
     }
 
-    # Convert Pydantic models to dictionaries
+    # Convert results to dictionaries with taxonomy_relationship_id as key
     for key, result in results.items():
-        if hasattr(result, 'dict'):  # Pydantic model
+        if hasattr(result, 'dict'):  # EnrichedAnalysisResult or Pydantic model
             debug_data["results"][key] = result.dict()
         else:
             debug_data["results"][key] = result
@@ -185,7 +186,7 @@ def save_debug_results(document_name: str, tier: str, results: dict, chunk_sizes
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(debug_data, f, indent=2, ensure_ascii=False)
 
-    print(f"🐛 Saved {tier} debug file: {filename}")
+    print(f"🐛 Saved {tier} debug file: {filename} (keys: taxonomy_relationship_ids)")
 
 
 def load_debug_results(document_name: str, tier: str):
@@ -202,12 +203,33 @@ def load_debug_results(document_name: str, tier: str):
         with open(filename, 'r', encoding='utf-8') as f:
             debug_data = json.load(f)
 
-        # Convert back to AnalysisResult objects
+        # Convert back to EnrichedAnalysisResult objects
         results = {}
         for key, result_dict in debug_data["results"].items():
-            results[key] = AnalysisResult(**result_dict)
+            print(f"\n=== LOADING DEBUG RESULT: {key} ===")
+            print(f"Raw taxonomy_relationship_id: {result_dict.get('taxonomy_relationship_id')}")
+            
+            # Extract taxonomy_relationship_id if present
+            taxonomy_relationship_id = result_dict.pop('taxonomy_relationship_id', None)
+            print(f"Extracted taxonomy_relationship_id: {taxonomy_relationship_id}")
+            
+            # Create AnalysisResult from remaining data
+            analysis_result = AnalysisResult(**result_dict)
+            
+            # Create EnrichedAnalysisResult
+            enriched_result = EnrichedAnalysisResult(
+                analysis_result=analysis_result,
+                taxonomy_relationship_id=taxonomy_relationship_id
+            )
+            
+            print(f"Created EnrichedAnalysisResult:")
+            print(f"  - taxonomy_relationship_id: {enriched_result.taxonomy_relationship_id}")
+            print(f"  - get('taxonomy_relationship_id'): {enriched_result.get('taxonomy_relationship_id')}")
+            print(f"  - hasattr taxonomy_relationship_id: {hasattr(enriched_result, 'taxonomy_relationship_id')}")
+            
+            results[key] = enriched_result
 
-        print(f"🔄 Loaded {tier} debug file: {filename} ({len(results)} items)")
+        print(f"🔄 Loaded {tier} debug file: {filename} ({len(results)} items with relationship IDs)")
         return results, True
 
     except Exception as e:
@@ -245,6 +267,30 @@ class AnalysisResult(BaseModel):
     description: str = Field(description="Description of what this item covers in the language of the input document.")
     unit: str = Field(description="Unit of measurement if applicable (e.g., CHF, days, percentage).")
     value: float = Field(description="Specific value or amount found in the document.")
+
+@dataclass
+class EnrichedAnalysisResult:
+    """Analysis result enriched with taxonomy relationship ID"""
+    analysis_result: AnalysisResult
+    taxonomy_relationship_id: Optional[str] = None
+    
+    def __getattr__(self, name):
+        """Delegate attribute access to the underlying AnalysisResult"""
+        return getattr(self.analysis_result, name)
+    
+    def get(self, key, default=None):
+        """Support dict-style .get() access for compatibility with existing code"""
+        if key == 'taxonomy_relationship_id':
+            return self.taxonomy_relationship_id
+        else:
+            # Delegate to the underlying AnalysisResult's dict representation
+            return self.analysis_result.dict().get(key, default)
+    
+    def dict(self):
+        """Return dictionary representation including taxonomy_relationship_id"""
+        result_dict = self.analysis_result.dict()
+        result_dict['taxonomy_relationship_id'] = self.taxonomy_relationship_id
+        return result_dict
 
 
 class DocumentAnalyzer:
@@ -764,7 +810,7 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
                         'segment_name': segment_name
                     }
 
-    async def analyze_benefits(self, document_text: str) -> Dict[str, AnalysisResult]:
+    async def analyze_benefits(self, document_text: str) -> Dict[str, EnrichedAnalysisResult]:
         """Analyze all benefits for included segments in chunked parallel processing."""
 
         if not self.benefit_chains:
@@ -774,7 +820,7 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
 
         # Convert benefit_chains to list for chunking
         benefit_items = list(self.benefit_chains.items())
-        all_results = {}
+        raw_results = {}
 
         # Process benefits in chunks
         for i in range(0, len(benefit_items), self.benefit_chunk_size):
@@ -793,11 +839,20 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
             chunk_results = await self._process_benefit_chunk(benefit_runnables, document_text)
             
             # Merge results
-            all_results.update(chunk_results)
+            raw_results.update(chunk_results)
             
             print(f"  ✅ Completed chunk {chunk_number}/{total_chunks}")
 
-        return all_results
+        # Enrich results with taxonomy IDs
+        # Build taxonomy_items from all benefits across segments
+        taxonomy_items = {}
+        for segment_name, benefits in self.benefits.items():
+            for benefit in benefits:
+                benefit_key = f"{segment_name}_{benefit['name']}"
+                taxonomy_items[benefit_key] = benefit
+                taxonomy_items[benefit['name']] = benefit  # Also allow name-based lookup
+        
+        return self._enrich_results_with_taxonomy_ids(raw_results, taxonomy_items)
 
     @retry(
         stop=stop_after_attempt(6),
@@ -907,14 +962,14 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
                             'level': 'segment'
                         }
 
-    async def analyze_modifiers(self, document_text: str) -> Dict[str, AnalysisResult]:
+    async def analyze_modifiers(self, document_text: str) -> Dict[str, EnrichedAnalysisResult]:
         """Analyze all benefit-level modifiers (limits/conditions/exclusions) for included benefits in chunked parallel processing.
         
         NOTE: This method is maintained for backward compatibility and delegates to analyze_benefit_modifiers.
         """
         return await self.analyze_benefit_modifiers(document_text)
 
-    async def analyze_benefit_modifiers(self, document_text: str) -> Dict[str, AnalysisResult]:
+    async def analyze_benefit_modifiers(self, document_text: str) -> Dict[str, EnrichedAnalysisResult]:
         """Analyze all benefit-level modifiers (limits/conditions/exclusions) for included benefits in chunked parallel processing."""
 
         if not self.benefit_modifier_chains:
@@ -924,7 +979,7 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
 
         # Convert benefit_modifier_chains to list for chunking
         modifier_items = list(self.benefit_modifier_chains.items())
-        all_results = {}
+        raw_results = {}
 
         # Process modifiers in chunks
         for i in range(0, len(modifier_items), self.modifier_chunk_size):
@@ -943,13 +998,23 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
             chunk_results = await self._process_modifier_chunk(modifier_runnables, document_text)
             
             # Merge results
-            all_results.update(chunk_results)
+            raw_results.update(chunk_results)
             
             print(f"  ✅ Completed benefit modifier chunk {chunk_number}/{total_chunks}")
 
-        return all_results
+        # Enrich results with taxonomy IDs
+        # Build taxonomy_items from benefit modifiers
+        taxonomy_items = {}
+        for modifier_type in ['limits', 'conditions', 'exclusions']:
+            for benefit_key, modifiers in self.benefit_modifiers[modifier_type].items():
+                for modifier in modifiers:
+                    modifier_chain_key = f"benefit_{benefit_key}_{modifier_type}_{modifier['name']}"
+                    taxonomy_items[modifier_chain_key] = modifier
+                    taxonomy_items[modifier['name']] = modifier  # Also allow name-based lookup
+        
+        return self._enrich_results_with_taxonomy_ids(raw_results, taxonomy_items)
 
-    async def analyze_product_modifiers(self, document_text: str) -> Dict[str, AnalysisResult]:
+    async def analyze_product_modifiers(self, document_text: str) -> Dict[str, EnrichedAnalysisResult]:
         """Analyze all product-level modifiers (limits/conditions/exclusions) in chunked parallel processing."""
 
         if not self.product_modifier_chains:
@@ -959,7 +1024,7 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
 
         # Convert product_modifier_chains to list for chunking
         modifier_items = list(self.product_modifier_chains.items())
-        all_results = {}
+        raw_results = {}
 
         # Process modifiers in chunks
         for i in range(0, len(modifier_items), self.modifier_chunk_size):
@@ -978,13 +1043,22 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
             chunk_results = await self._process_modifier_chunk(modifier_runnables, document_text)
             
             # Merge results
-            all_results.update(chunk_results)
+            raw_results.update(chunk_results)
             
             print(f"  ✅ Completed product modifier chunk {chunk_number}/{total_chunks}")
 
-        return all_results
+        # Enrich results with taxonomy IDs
+        # Build taxonomy_items from product modifiers
+        taxonomy_items = {}
+        for modifier_type in ['limits', 'conditions', 'exclusions']:
+            for modifier in self.product_modifiers[modifier_type]:
+                modifier_chain_key = f"product_{modifier_type}_{modifier['name']}"
+                taxonomy_items[modifier_chain_key] = modifier
+                taxonomy_items[modifier['name']] = modifier  # Also allow name-based lookup
+        
+        return self._enrich_results_with_taxonomy_ids(raw_results, taxonomy_items)
 
-    async def analyze_segment_modifiers(self, document_text: str) -> Dict[str, AnalysisResult]:
+    async def analyze_segment_modifiers(self, document_text: str) -> Dict[str, EnrichedAnalysisResult]:
         """Analyze all segment-level modifiers (limits/conditions/exclusions) in chunked parallel processing."""
 
         if not self.segment_modifier_chains:
@@ -994,7 +1068,7 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
 
         # Convert segment_modifier_chains to list for chunking
         modifier_items = list(self.segment_modifier_chains.items())
-        all_results = {}
+        raw_results = {}
 
         # Process modifiers in chunks
         for i in range(0, len(modifier_items), self.modifier_chunk_size):
@@ -1013,11 +1087,21 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
             chunk_results = await self._process_modifier_chunk(modifier_runnables, document_text)
             
             # Merge results
-            all_results.update(chunk_results)
+            raw_results.update(chunk_results)
             
             print(f"  ✅ Completed segment modifier chunk {chunk_number}/{total_chunks}")
 
-        return all_results
+        # Enrich results with taxonomy IDs
+        # Build taxonomy_items from segment modifiers
+        taxonomy_items = {}
+        for modifier_type in ['limits', 'conditions', 'exclusions']:
+            for segment_name, modifiers in self.segment_modifiers[modifier_type].items():
+                for modifier in modifiers:
+                    modifier_chain_key = f"segment_{segment_name}_{modifier_type}_{modifier['name']}"
+                    taxonomy_items[modifier_chain_key] = modifier
+                    taxonomy_items[modifier['name']] = modifier  # Also allow name-based lookup
+        
+        return self._enrich_results_with_taxonomy_ids(raw_results, taxonomy_items)
 
     @retry(
         stop=stop_after_attempt(6),
@@ -1040,38 +1124,40 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
             # Re-raise to trigger retry mechanism
             raise e
 
-    async def _analyze_segments_parallel(self, document_text: str) -> Dict[str, AnalysisResult]:
+    async def _analyze_segments_parallel(self, document_text: str) -> Dict[str, EnrichedAnalysisResult]:
         """Execute parallel segment analysis with chunked processing and retry logic."""
         segment_items = list(self.segment_chains.items())
         
         # If segments are few, process all at once
         if len(segment_items) <= self.segment_chunk_size:
             print(f"Analyzing {len(segment_items)} segments in a single batch...")
-            return await self._process_segment_chunk(dict(segment_items), document_text)
+            raw_results = await self._process_segment_chunk(dict(segment_items), document_text)
+        else:
+            # Otherwise, process in chunks
+            print(f"Analyzing {len(segment_items)} segments in chunks of {self.segment_chunk_size}...")
+            raw_results = {}
 
-        # Otherwise, process in chunks
-        print(f"Analyzing {len(segment_items)} segments in chunks of {self.segment_chunk_size}...")
-        all_results = {}
+            for i in range(0, len(segment_items), self.segment_chunk_size):
+                chunk = segment_items[i:i + self.segment_chunk_size]
+                chunk_number = (i // self.segment_chunk_size) + 1
+                total_chunks = (len(segment_items) + self.segment_chunk_size - 1) // self.segment_chunk_size
+                
+                print(f"  Processing chunk {chunk_number}/{total_chunks} ({len(chunk)} segments)...")
 
-        for i in range(0, len(segment_items), self.segment_chunk_size):
-            chunk = segment_items[i:i + self.segment_chunk_size]
-            chunk_number = (i // self.segment_chunk_size) + 1
-            total_chunks = (len(segment_items) + self.segment_chunk_size - 1) // self.segment_chunk_size
-            
-            print(f"  Processing chunk {chunk_number}/{total_chunks} ({len(chunk)} segments)...")
+                # Create parallel runnables for this chunk
+                segment_runnables = dict(chunk)
 
-            # Create parallel runnables for this chunk
-            segment_runnables = dict(chunk)
+                # Process this chunk with retry
+                chunk_results = await self._process_segment_chunk(segment_runnables, document_text)
+                
+                # Merge results
+                raw_results.update(chunk_results)
+                
+                print(f"  ✅ Completed chunk {chunk_number}/{total_chunks}")
 
-            # Process this chunk with retry
-            chunk_results = await self._process_segment_chunk(segment_runnables, document_text)
-            
-            # Merge results
-            all_results.update(chunk_results)
-            
-            print(f"  ✅ Completed chunk {chunk_number}/{total_chunks}")
-
-        return all_results
+        # Enrich results with taxonomy IDs
+        taxonomy_items = {segment['name']: segment for segment in self.segments}
+        return self._enrich_results_with_taxonomy_ids(raw_results, taxonomy_items)
 
     @retry(
         stop=stop_after_attempt(6),
@@ -1092,6 +1178,67 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
             print(f"    Error analyzing segment chunk: {e}")
             # Re-raise to trigger retry mechanism
             raise e
+
+    def _enrich_results_with_taxonomy_ids(self, results: Dict[str, AnalysisResult], taxonomy_items: Dict[str, Dict]) -> Dict[str, EnrichedAnalysisResult]:
+        """Enrich AnalysisResult objects with taxonomy_relationship_id from taxonomy data."""
+        enriched_results = {}
+        
+        print(f"\n=== ENRICHMENT DEBUG ===")
+        print(f"Enriching {len(results)} analysis results...")
+        
+        for key, result in results.items():
+            item_name = result.item_name
+            relationship_id = None
+            
+            print(f"\nProcessing: key='{key}', item_name='{item_name}'")
+            
+            # Get the relationship ID directly from properly typed mappings using item_name
+            # For this specific DCM product, each item_name should map to exactly one relationship
+            if hasattr(self, 'taxonomy_data') and self.taxonomy_data:
+                mappings = self.taxonomy_data.mappings
+                
+                print(f"  Available segment relationships: {list(mappings.segment_relationships.keys())}")
+                print(f"  Available benefit relationships: {list(mappings.benefit_relationships.keys())[:3]}...")
+                
+                # Look up by item_name in the appropriate mapping category
+                if item_name in mappings.segment_relationships:
+                    relationship_id = mappings.segment_relationships[item_name]
+                    print(f"  ✓ Found segment relationship for '{item_name}': {relationship_id[:8]}...")
+                
+                elif item_name in mappings.benefit_relationships:
+                    relationship_id = mappings.benefit_relationships[item_name]
+                    print(f"  ✓ Found benefit relationship for '{item_name}': {relationship_id[:8]}...")
+                
+                elif item_name in mappings.limit_relationships:
+                    relationship_id = mappings.limit_relationships[item_name]
+                    print(f"  ✓ Found limit relationship for '{item_name}': {relationship_id[:8]}...")
+                
+                elif item_name in mappings.condition_relationships:
+                    relationship_id = mappings.condition_relationships[item_name]
+                    print(f"  ✓ Found condition relationship for '{item_name}': {relationship_id[:8]}...")
+                
+                elif item_name in mappings.exclusion_relationships:
+                    relationship_id = mappings.exclusion_relationships[item_name]
+                    print(f"  ✓ Found exclusion relationship for '{item_name}': {relationship_id[:8]}...")
+                
+                else:
+                    print(f"  ⚠ No relationship mapping found for item_name '{item_name}'")
+            else:
+                print(f"  ⚠ No taxonomy_data available")
+            
+            # Create enriched result
+            enriched_result = EnrichedAnalysisResult(
+                analysis_result=result,
+                taxonomy_relationship_id=relationship_id
+            )
+            
+            print(f"  → Created EnrichedAnalysisResult with taxonomy_relationship_id: {relationship_id}")
+            
+            # KEEP original key to preserve access patterns
+            enriched_results[key] = enriched_result
+        
+        print(f"=== ENRICHMENT COMPLETE ===\n")
+        return enriched_results
 
     async def analyze_document(self, document_path: str) -> Dict:
         """Analyze a single document for all segments and benefits in parallel with comprehensive three-tier modifier support and debug functionality."""
@@ -1280,6 +1427,28 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
                 benefit_modifier_results = {}
                 modifier_results = {}
 
+            # Helper function to create item dictionary with taxonomy_relationship_id
+            def create_item_dict(result):
+                """Create item dictionary from EnrichedAnalysisResult, preserving taxonomy_relationship_id"""
+                item_dict = {
+                    "item_name": result.item_name,
+                    "is_included": result.is_included,
+                    "section_reference": result.section_reference,
+                    "full_text_part": result.full_text_part,
+                    "llm_summary": result.llm_summary,
+                    "description": result.description,
+                    "unit": result.unit,
+                    "value": result.value
+                }
+                
+                # Add taxonomy_relationship_id if present
+                if hasattr(result, 'taxonomy_relationship_id') and result.taxonomy_relationship_id:
+                    item_dict["taxonomy_relationship_id"] = result.taxonomy_relationship_id
+                elif hasattr(result, 'get') and result.get('taxonomy_relationship_id'):
+                    item_dict["taxonomy_relationship_id"] = result.get('taxonomy_relationship_id')
+                
+                return item_dict
+
             # Step 4: Build enhanced hierarchical tree structure with three-tier modifiers
             tree_structure = {
                 "product_modifiers": {
@@ -1297,16 +1466,7 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
                     modifier_type = modifier_data['modifier_type']
                     modifier_name = modifier_data['modifier_info']['name']
                     modifier_item = {
-                        modifier_name: {
-                            "item_name": modifier_result.item_name,
-                            "is_included": modifier_result.is_included,
-                            "section_reference": modifier_result.section_reference,
-                            "full_text_part": modifier_result.full_text_part,
-                            "llm_summary": modifier_result.llm_summary,
-                            "description": modifier_result.description,
-                            "unit": modifier_result.unit,
-                            "value": modifier_result.value
-                        }
+                        modifier_name: create_item_dict(modifier_result)
                     }
                     tree_structure["product_modifiers"][modifier_type].append(modifier_item)
 
@@ -1316,14 +1476,7 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
                     # Create segment with its data using taxonomy_item_name as key
                     segment_item = {
                         segment_name: {
-                            "item_name": segment_result.item_name,
-                            "is_included": segment_result.is_included,
-                            "section_reference": segment_result.section_reference,
-                            "full_text_part": segment_result.full_text_part,
-                            "llm_summary": segment_result.llm_summary,
-                            "description": segment_result.description,
-                            "unit": segment_result.unit,
-                            "value": segment_result.value,
+                            **create_item_dict(segment_result),
                             "segment_modifiers": {
                                 "limits": [],
                                 "conditions": [],
@@ -1341,16 +1494,7 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
                                 modifier_type = modifier_data['modifier_type']
                                 modifier_name = modifier_data['modifier_info']['name']
                                 modifier_item = {
-                                    modifier_name: {
-                                        "item_name": modifier_result.item_name,
-                                        "is_included": modifier_result.is_included,
-                                        "section_reference": modifier_result.section_reference,
-                                        "full_text_part": modifier_result.full_text_part,
-                                        "llm_summary": modifier_result.llm_summary,
-                                        "description": modifier_result.description,
-                                        "unit": modifier_result.unit,
-                                        "value": modifier_result.value
-                                    }
+                                    modifier_name: create_item_dict(modifier_result)
                                 }
                                 segment_item[segment_name]["segment_modifiers"][modifier_type].append(modifier_item)
 
@@ -1362,14 +1506,7 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
                             benefit_name = self.benefit_chains[benefit_key]['benefit_info']['name']
                             benefit_item = {
                                 benefit_name: {
-                                    "item_name": benefit_result.item_name,
-                                    "is_included": benefit_result.is_included,
-                                    "section_reference": benefit_result.section_reference,
-                                    "full_text_part": benefit_result.full_text_part,
-                                    "llm_summary": benefit_result.llm_summary,
-                                    "description": benefit_result.description,
-                                    "unit": benefit_result.unit,
-                                    "value": benefit_result.value,
+                                    **create_item_dict(benefit_result),
                                     "benefit_modifiers": {
                                         "limits": [],
                                         "conditions": [],
@@ -1388,16 +1525,7 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
                                         modifier_type = modifier_data['modifier_type']
                                         modifier_name = modifier_data['modifier_info']['name']
                                         modifier_item = {
-                                            modifier_name: {
-                                                "item_name": modifier_result.item_name,
-                                                "is_included": modifier_result.is_included,
-                                                "section_reference": modifier_result.section_reference,
-                                                "full_text_part": modifier_result.full_text_part,
-                                                "llm_summary": modifier_result.llm_summary,
-                                                "description": modifier_result.description,
-                                                "unit": modifier_result.unit,
-                                                "value": modifier_result.value
-                                            }
+                                            modifier_name: create_item_dict(modifier_result)
                                         }
 
                                         benefit_item[benefit_name]["benefit_modifiers"][modifier_type].append(modifier_item)
@@ -1519,23 +1647,37 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
             else:
                 print("No segments found. Skipping benefit and modifier analysis.")
 
-            # Step 4: Build hierarchical tree structure
+            # Step 4: Build hierarchical tree structure using create_item_dict helper
+            def create_item_dict(result):
+                """Create item dictionary from EnrichedAnalysisResult, preserving taxonomy_relationship_id"""
+                item_dict = {
+                    "item_name": result.item_name,
+                    "is_included": result.is_included,
+                    "section_reference": result.section_reference,
+                    "full_text_part": result.full_text_part,
+                    "llm_summary": result.llm_summary,
+                    "description": result.description,
+                    "unit": result.unit,
+                    "value": result.value
+                }
+                
+                # Add taxonomy_relationship_id if present
+                if hasattr(result, 'taxonomy_relationship_id') and result.taxonomy_relationship_id:
+                    item_dict["taxonomy_relationship_id"] = result.taxonomy_relationship_id
+                elif hasattr(result, 'get') and result.get('taxonomy_relationship_id'):
+                    item_dict["taxonomy_relationship_id"] = result.get('taxonomy_relationship_id')
+                
+                return item_dict
+
             tree_structure = {"segments": []}
 
             # Process each segment
             for segment_name, segment_result in segment_results.items():
                 if segment_result.is_included:
-                    # Create segment with its data using taxonomy_item_name as key
+                    # Create segment with its data using create_item_dict to preserve taxonomy_relationship_id
                     segment_item = {
                         segment_name: {
-                            "item_name": segment_result.item_name,
-                            "is_included": segment_result.is_included,
-                            "section_reference": segment_result.section_reference,
-                            "full_text_part": segment_result.full_text_part,
-                            "llm_summary": segment_result.llm_summary,
-                            "description": segment_result.description,
-                            "unit": segment_result.unit,
-                            "value": segment_result.value,
+                            **create_item_dict(segment_result),
                             "benefits": []
                         }
                     }
@@ -1548,14 +1690,7 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
                             benefit_name = self.benefit_chains[benefit_key]['benefit_info']['name']
                             benefit_item = {
                                 benefit_name: {
-                                    "item_name": benefit_result.item_name,
-                                    "is_included": benefit_result.is_included,
-                                    "section_reference": benefit_result.section_reference,
-                                    "full_text_part": benefit_result.full_text_part,
-                                    "llm_summary": benefit_result.llm_summary,
-                                    "description": benefit_result.description,
-                                    "unit": benefit_result.unit,
-                                    "value": benefit_result.value,
+                                    **create_item_dict(benefit_result),
                                     "limits": [],
                                     "conditions": [],
                                     "exclusions": []
@@ -1572,16 +1707,7 @@ Der Segmentmodifikator ({modifier_info['name']}) ist anwendbar DANN UND NUR DANN
                                         modifier_type = modifier_data['modifier_type']
                                         modifier_name = modifier_data['modifier_info']['name']
                                         modifier_item = {
-                                            modifier_name: {
-                                                "item_name": modifier_result.item_name,
-                                                "is_included": modifier_result.is_included,
-                                                "section_reference": modifier_result.section_reference,
-                                                "full_text_part": modifier_result.full_text_part,
-                                                "llm_summary": modifier_result.llm_summary,
-                                                "description": modifier_result.description,
-                                                "unit": modifier_result.unit,
-                                                "value": modifier_result.value
-                                            }
+                                            modifier_name: create_item_dict(modifier_result)
                                         }
 
                                         # Add to appropriate modifier category

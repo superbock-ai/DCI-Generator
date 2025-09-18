@@ -27,15 +27,16 @@ services:
     env_file:
       - .env
     environment:
-      - PYTHONPATH=/app/src:/app
+      - PYTHONPATH=/app/worker:/app
+      - PATH=/app/.venv/bin:$PATH
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
-      - ./worker:/app/src
-      - ./worker/debug:/app/debug
-      - ./worker/exports:/app/exports
-    command: ["python", "/app/src/worker.py"]
+      - .:/app  # Mount entire project root
+      - /app/.venv  # Keep venv as anonymous volume for performance
+    working_dir: /app/worker
+    command: ["sh", "-c", "uv sync --no-cache && watchmedo auto-restart --directory=. --pattern=*.py --recursive -- python worker.py"]
     networks:
       - dci-network
     restart: unless-stopped
