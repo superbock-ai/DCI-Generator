@@ -7,7 +7,7 @@ import json
 import asyncio
 from typing import Dict, Any, Optional
 from celery_app import app
-from worker_main import DocumentAnalyzer, convert_pydantic_to_dict, seed_to_directus, cleanup_seeded_data
+from simplified_seeder import seed_to_directus, cleanup_seeded_data
 from directus_tools import DirectusConfig, DirectusClient
 
 
@@ -41,10 +41,11 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
     export = kwargs.get('export', False)
     seed_directus = kwargs.get('seed_directus', False)
     dry_run_directus = kwargs.get('dry_run_directus', False)
+    debug = kwargs.get('debug', False)
 
     print(f"Starting simplified analysis task for product: {product_id}")
     print(f"Task ID: {self.request.id}")
-    print(f"Parameters: export={export}, seed={seed_directus}")
+    print(f"Parameters: export={export}, seed={seed_directus}, debug={debug}")
 
     try:
         # Set task status to processing
@@ -92,7 +93,7 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
 
         # Initialize simplified analyzer
         from simple_worker import SimplifiedDocumentAnalyzer
-        analyzer = SimplifiedDocumentAnalyzer(dcm_id=dcm_id)
+        analyzer = SimplifiedDocumentAnalyzer(dcm_id=dcm_id, product_id=product_id)
 
         # Fetch taxonomy data
         print("Fetching taxonomy data from GraphQL endpoint...")
@@ -108,7 +109,7 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
         asyncio.set_event_loop(loop)
 
         try:
-            results_dict = loop.run_until_complete(analyzer.analyze_document(document_text))
+            results_dict = loop.run_until_complete(analyzer.analyze_document(document_text, debug=debug))
         finally:
             loop.close()
 
@@ -137,10 +138,11 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
 
             self.update_state(state='PROCESSING', meta={'status': 'Seeding to Directus'})
 
-            # Convert results to format expected by directus_seeder
-            seeder_format = {product_id: results_dict}
+            # Get hierarchical results from analyzer (preserves proper parent-child relationships)
+            converted_results = analyzer.get_hierarchical_results_for_seeding()
+            
+            seeder_format = {product_id: converted_results}
 
-            from directus_tools import seed_to_directus
             seeding_success = seed_to_directus(
                 analysis_results=seeder_format,
                 product_id=product_id,

@@ -49,17 +49,17 @@ class TaxonomyRelationship:
     category: str  # category of the related taxonomy item
     parent_category: str  # category of the parent (context for this relationship)
 
-@dataclass 
+@dataclass
 class TaxonomyMappings:
     """Maps from analysis context to specific relationship UUIDs"""
     # Key insight: We need to map from analysis context (segment/benefit names from analysis)
     # to the specific relationship UUID that should be used for Directus
     # This is NOT a simple name->relationship mapping since names aren't unique
-    segment_relationships: Dict[str, str]  # analysis_segment_key -> relationship_id
-    benefit_relationships: Dict[str, str]  # analysis_benefit_key -> relationship_id  
-    condition_relationships: Dict[str, str]  # analysis_condition_key -> relationship_id
-    limit_relationships: Dict[str, str]  # analysis_limit_key -> relationship_id
-    exclusion_relationships: Dict[str, str]  # analysis_exclusion_key -> relationship_id
+    segments: Dict[str, str]  # analysis_segment_key -> relationship_id
+    benefits: Dict[str, str]  # analysis_benefit_key -> relationship_id  
+    conditions: Dict[str, str]  # analysis_condition_key -> relationship_id
+    limits: Dict[str, str]  # analysis_limit_key -> relationship_id
+    exclusions: Dict[str, str]  # analysis_exclusion_key -> relationship_id
 
 @dataclass
 class TaxonomyData:
@@ -213,11 +213,11 @@ class UnifiedTaxonomyFetcher:
         
         # Create properly typed mappings
         mappings = TaxonomyMappings(
-            segment_relationships=segment_relationships,
-            benefit_relationships=benefit_relationships,
-            condition_relationships=condition_relationships,
-            limit_relationships=limit_relationships,
-            exclusion_relationships=exclusion_relationships
+            segments=segment_relationships,
+            benefits=benefit_relationships,
+            conditions=condition_relationships,
+            limits=limit_relationships,
+            exclusions=exclusion_relationships
         )
         
         # Cache and return the data
@@ -538,7 +538,7 @@ class DirectusSeeder:
             print(f"Error fetching taxonomy mappings: {e}")
             print("Continuing without taxonomy mappings - items may fail to create")
             # Create empty typed mappings as fallback
-            from worker.directus_tools import TaxonomyMappings
+            # TaxonomyMappings is defined in this same file, no import needed
             self.taxonomy_mappings = TaxonomyMappings(
                 segments={}, 
                 benefits={}, 
@@ -550,7 +550,7 @@ class DirectusSeeder:
     def set_taxonomy_data(self, taxonomy_data: TaxonomyData):
         """Set pre-fetched taxonomy data from unified fetcher to avoid duplicate GraphQL calls"""
         self.taxonomy_mappings = taxonomy_data.mappings
-        print(f"✓ Using pre-fetched taxonomy mappings: {len(self.taxonomy_mappings.segment_relationships)} segments, {len(self.taxonomy_mappings.benefit_relationships)} benefits")
+        print(f"✓ Using pre-fetched taxonomy mappings: {len(self.taxonomy_mappings.segments)} segments, {len(self.taxonomy_mappings.benefits)} benefits")
 
     def _sanitize_text(self, text: str) -> str:
         """Sanitize text for UTF-8 encoding and remove problematic characters"""
@@ -677,6 +677,49 @@ class DirectusSeeder:
         print(f"    ✓ Created benefit: {data['benefit_name']} (ID: {benefit_id})")
         return benefit_id
 
+    def extract_numeric_value_from_text(self, text: str) -> float:
+        """
+        Extract the first numeric value from Swiss insurance text.
+        
+        Args:
+            text: Text containing numeric values (e.g., "50'000 für Einzelversicherung, 100'000 für Familienversicherung")
+            
+        Returns:
+            float: The first numeric value found, or None if no valid number is found
+        """
+        if not text or not isinstance(text, str):
+            return None
+            
+        # Swiss number formats: 50'000, 100'000, etc.
+        import re
+        
+        # Pattern to match Swiss number formats with apostrophes as thousands separators
+        # Examples: 50'000, 100'000, 1'500'000, etc.
+        swiss_pattern = r"\b(\d{1,3}(?:'\d{3})*(?:\.\d+)?)\b"
+        
+        # Also match regular numbers without apostrophes
+        regular_pattern = r"\b(\d+(?:\.\d+)?)\b"
+        
+        # Try Swiss format first (with apostrophes)
+        swiss_matches = re.findall(swiss_pattern, text)
+        if swiss_matches:
+            # Take the first match and remove apostrophes
+            clean_number = swiss_matches[0].replace("'", "")
+            try:
+                return float(clean_number)
+            except ValueError:
+                pass
+                
+        # Fall back to regular numbers
+        regular_matches = re.findall(regular_pattern, text)
+        if regular_matches:
+            try:
+                return float(regular_matches[0])
+            except ValueError:
+                pass
+                
+        return None
+
     def create_detail_item(self, detail_type: str, detail_key: str, detail_data: Dict[str, Any],
                       product_id: str = None, segment_id: str = None, benefit_id: str = None,
                       segment_name: str = None, benefit_name: str = None) -> str:
@@ -722,39 +765,33 @@ class DirectusSeeder:
             data['limit_name'] = sanitize_utf8_text(detail_data.get('item_name', detail_key))
             data['description'] = sanitize_utf8_text(detail_data.get('description'))
             
-            # Handle value attribute - if float use directly, if string clean it
+            # Enhanced value handling for Swiss number formats
             raw_value = detail_data.get('value')
             if raw_value is not None and raw_value not in ['N/A', '', ',']:
-                if isinstance(raw_value, float):
-                    # Use float value directly
-                    data['limit_value'] = raw_value
+                if isinstance(raw_value, (int, float)):
+                    # Use numeric value directly
+                    data['limit_value'] = float(raw_value)
                 else:
-                    # It's a string, perform cleaning as before
-                    try:
-                        clean_value = str(raw_value).replace("'", "").replace(",", "").strip()
-                        # Skip empty strings after cleaning
-                        if not clean_value:
-                            data['limit_value'] = None
-                        else:
-                            # Try to convert to float first, then int if it's a whole number
-                            numeric_value = float(clean_value)
-                            if numeric_value.is_integer():
-                                data['limit_value'] = int(numeric_value)
+                    # It's a string, try smart extraction
+                    text_value = str(raw_value).strip()
+                    
+                    # Check for unlimited keywords first
+                    if text_value.lower() in ['unbegrenzt', 'unlimited', 'illimité', 'unlimited coverage']:
+                        data['limit_value'] = None  # Store as NULL for unlimited
+                    else:
+                        # Try to extract numeric value using the new method
+                        extracted_value = self.extract_numeric_value_from_text(text_value)
+                        if extracted_value is not None:
+                            # Successfully extracted a numeric value
+                            if extracted_value.is_integer():
+                                data['limit_value'] = int(extracted_value)
                             else:
-                                data['limit_value'] = numeric_value
-                    except ValueError:
-                        # If conversion fails, handle special text values
-                        text_value = sanitize_utf8_text(str(raw_value).strip())
-                        if text_value and text_value not in ['N/A', ',']:
-                            # For text values like "Unbegrenzt" (unlimited), store as NULL since it's a numeric field
-                            if text_value.lower() in ['unbegrenzt', 'unlimited', 'illimité', 'unlimited coverage']:
-                                data['limit_value'] = None  # or use 999999999 for unlimited
-                            else:
-                                # Store other meaningful text values as NULL for numeric field
-                                data['limit_value'] = None
-                                print(f"      ⚠ Non-numeric limit value '{text_value}' stored as NULL")
+                                data['limit_value'] = extracted_value
+                            print(f"      ✓ Extracted numeric value: {data['limit_value']} from '{text_value[:50]}...'")
                         else:
+                            # No numeric value could be extracted
                             data['limit_value'] = None
+                            print(f"      ⚠ No numeric value found in '{text_value}' - stored as NULL")
             else:
                 data['limit_value'] = None
                 
@@ -846,35 +883,13 @@ class DirectusSeeder:
             else:
                 print("[DRY RUN] Skipping taxonomy mapping fetch")
 
-        print(f"\n=== ANALYSIS_RESULTS DEBUG ===")
-        print(f"analysis_results keys: {list(analysis_results.keys())}")
-        
         # Get the product data
         product_data = analysis_results.get(product_id, {})
-        print(f"product_data keys: {list(product_data.keys())}")
-        
         segments_data = product_data.get('segments', [])
-        print(f"segments_data length: {len(segments_data)}")
-        print(f"segments_data type: {type(segments_data)}")
 
         if not segments_data:
             print("No segments found in analysis results")
             return
-
-        # Debug first segment in detail
-        if segments_data:
-            first_segment_item = segments_data[0]
-            print(f"First segment item keys: {list(first_segment_item.keys())}")
-            
-            for segment_key, segment_data in first_segment_item.items():
-                print(f"\nSegment '{segment_key}':")
-                print(f"  Type: {type(segment_data)}")
-                print(f"  Has taxonomy_relationship_id attr: {hasattr(segment_data, 'taxonomy_relationship_id')}")
-                if hasattr(segment_data, 'taxonomy_relationship_id'):
-                    print(f"  taxonomy_relationship_id: {segment_data.taxonomy_relationship_id}")
-                print(f"  get('taxonomy_relationship_id'): {segment_data.get('taxonomy_relationship_id') if hasattr(segment_data, 'get') else 'NO GET METHOD'}")
-                break  # Only debug first segment
-        print(f"=== END ANALYSIS_RESULTS DEBUG ===\n")
 
         # Process each segment
         for segment_item in segments_data:
