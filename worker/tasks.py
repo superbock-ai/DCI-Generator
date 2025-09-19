@@ -3,6 +3,7 @@ Celery tasks for DCI Generator worker.
 """
 
 import os
+import json
 import asyncio
 from typing import Dict, Any, Optional
 from celery_app import app
@@ -13,19 +14,11 @@ from directus_tools import DirectusConfig, DirectusClient
 @app.task(bind=True, name='dci_worker.analyze_document')
 def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
     """
-    Celery task for analyzing insurance documents.
+    Celery task for analyzing insurance documents using the simplified worker.
 
     Args:
         product_id (str): Product ID from Directus to analyze
         export (bool): Export results to JSON file (default: False)
-        detailed (bool): Show detailed results (default: False)
-        no_cache (bool): Disable caching for this run (default: False)
-        segment_chunks (int): Number of segments to process in parallel per chunk (default: 8)
-        benefit_chunks (int): Number of benefits to process in parallel per chunk (default: 8)
-        modifier_chunks (int): Number of modifiers to process in parallel per chunk (default: 3)
-        debug (bool): Enable debug mode (default: False)
-        debug_clean (bool): Delete existing debug files before running (default: False)
-        debug_from (str): Force re-run from specific tier (default: None)
         seed_directus (bool): Seed analysis results to Directus (default: False)
         dry_run_directus (bool): Dry run mode for Directus seeding (default: False)
 
@@ -46,21 +39,12 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
         }
 
     export = kwargs.get('export', False)
-    detailed = kwargs.get('detailed', False)
-    no_cache = kwargs.get('no_cache', False)
-    segment_chunks = kwargs.get('segment_chunks', 8)
-    benefit_chunks = kwargs.get('benefit_chunks', 8)
-    # Support both old and new parameter names for backward compatibility
-    modifier_chunks = kwargs.get('modifier_chunks') or kwargs.get('detail_chunks', 3)
-    debug = kwargs.get('debug', False)
-    debug_clean = kwargs.get('debug_clean', False)
-    debug_from = kwargs.get('debug_from')
     seed_directus = kwargs.get('seed_directus', False)
     dry_run_directus = kwargs.get('dry_run_directus', False)
 
-    print(f"Starting analysis task for product: {product_id}")
+    print(f"Starting simplified analysis task for product: {product_id}")
     print(f"Task ID: {self.request.id}")
-    print(f"Parameters: export={export}, detailed={detailed}, debug={debug}, seed={seed_directus}")
+    print(f"Parameters: export={export}, seed={seed_directus}")
 
     try:
         # Set task status to processing
@@ -104,120 +88,45 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
         print(f"✓ Using DCM ID: {dcm_id}")
         print(f"✓ Document text length: {len(document_text)} characters")
 
-        # Handle debug flags
-        document_name = product_id
-
-        if debug_clean:
-            print("🗑️ Cleaning all debug files...")
-            # Import the clean_debug_files function from main
-            from worker_main import clean_debug_files
-            clean_debug_files(document_name)
-
-        if debug_from:
-            print(f"🔄 Cleaning debug files from {debug_from} onwards...")
-            from worker_main import clean_debug_files
-            clean_debug_files(document_name, debug_from)
-
-        # Disable cache if requested
-        if no_cache:
-            print("Caching disabled for this run")
-            from langchain.globals import set_llm_cache
-            set_llm_cache(None)
-
         self.update_state(state='PROCESSING', meta={'status': 'Setting up analyzer'})
 
-        # Initialize analyzer with corrected parameter name
-        analyzer = DocumentAnalyzer(
-            segment_chunk_size=segment_chunks,
-            benefit_chunk_size=benefit_chunks,
-            modifier_chunk_size=modifier_chunks,
-            debug_mode=debug,
-            dcm_id=dcm_id
-        )
+        # Initialize simplified analyzer
+        from simple_worker import SimplifiedDocumentAnalyzer
+        analyzer = SimplifiedDocumentAnalyzer(dcm_id=dcm_id)
 
-        # Fetch taxonomy segments, benefits, and modifiers from GraphQL
-        print("Fetching segment taxonomy from GraphQL endpoint...")
+        # Fetch taxonomy data
+        print("Fetching taxonomy data from GraphQL endpoint...")
         self.update_state(state='PROCESSING', meta={'status': 'Fetching taxonomy data'})
+        analyzer.fetch_taxonomy_data()
 
-        # Run async code in event loop
+        # Analyze the document
+        print("Starting document analysis...")
+        self.update_state(state='PROCESSING', meta={'status': 'Analyzing document'})
+
+        # Run async analysis
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
         try:
-            analyzer.segments = loop.run_until_complete(analyzer.fetch_taxonomy_segments())
-
-            print(f"Found {len(analyzer.segments)} segment types:")
-            total_benefits = 0
-            total_modifiers = 0
-            for segment in analyzer.segments:
-                segment_benefits = len(analyzer.benefits.get(segment['name'], []))
-                total_benefits += segment_benefits
-
-                # Count modifiers for this segment
-                segment_modifiers = 0
-                for benefit in analyzer.benefits.get(segment['name'], []):
-                    benefit_key = f"{segment['name']}_{benefit['name']}"
-                    for modifier_type in ['limits', 'conditions', 'exclusions']:
-                        segment_modifiers += len(analyzer.benefit_modifiers[modifier_type].get(benefit_key, []))
-                total_modifiers += segment_modifiers
-
-                print(f"  - {segment['name']}: {segment['description']} ({segment_benefits} benefits, {segment_modifiers} modifiers)")
-
-            print(f"Total available for analysis: {total_benefits} benefits, {total_modifiers} modifiers")
-
-            # Setup analysis chains
-            analyzer.setup_analysis_chains()
-
-            # Analyze the document
-            print("Starting document analysis...")
-            self.update_state(state='PROCESSING', meta={'status': 'Analyzing document'})
-
-            results_dict = loop.run_until_complete(analyzer.analyze_document_text(document_text, document_name))
-
+            results_dict = loop.run_until_complete(analyzer.analyze_document(document_text))
         finally:
             loop.close()
 
-        # Count results from dictionary structure
-        num_segments = len(results_dict.get("segments", []))
-        num_benefits = 0
-        num_modifiers = 0
-        
-        # Count benefits and modifiers from the enhanced dictionary structure
-        for segment_item in results_dict.get("segments", []):
-            for segment_name, segment_data in segment_item.items():
-                segment_benefits = segment_data.get("benefits", [])
-                num_benefits += len(segment_benefits)
-                
-                for benefit_item in segment_benefits:
-                    for benefit_name, benefit_data in benefit_item.items():
-                        benefit_modifiers = benefit_data.get("benefit_modifiers", {})
-                        num_modifiers += len(benefit_modifiers.get("limits", []))
-                        num_modifiers += len(benefit_modifiers.get("conditions", []))
-                        num_modifiers += len(benefit_modifiers.get("exclusions", []))
-
-        # Also count product-level and segment-level modifiers
-        product_modifiers = results_dict.get("product_modifiers", {})
-        num_modifiers += len(product_modifiers.get("limits", []))
-        num_modifiers += len(product_modifiers.get("conditions", []))
-        num_modifiers += len(product_modifiers.get("exclusions", []))
-
-        for segment_item in results_dict.get("segments", []):
-            for segment_name, segment_data in segment_item.items():
-                segment_modifiers = segment_data.get("segment_modifiers", {})
-                num_modifiers += len(segment_modifiers.get("limits", []))
-                num_modifiers += len(segment_modifiers.get("conditions", []))
-                num_modifiers += len(segment_modifiers.get("exclusions", []))
+        # Count results from the simplified structure
+        num_segments = len(results_dict.get("segments", {}))
+        num_benefits = len(results_dict.get("benefits", {}))
+        num_modifiers = len(results_dict.get("modifiers", {}))
 
         print(f"Analysis completed: {num_segments} segments, {num_benefits} benefits, {num_modifiers} modifiers")
 
         # Export results if requested
         if export:
             print("Exporting results to JSON...")
-            analyzer.export_results(results_dict, document_name)
-
-        # Show detailed results if requested
-        if detailed:
-            analyzer.print_detailed_results(results_dict, document_name)
+            export_filename = f"exports/{product_id}_analysis_results.json"
+            os.makedirs("exports", exist_ok=True)
+            with open(export_filename, 'w', encoding='utf-8') as f:
+                json.dump(results_dict, f, indent=2, ensure_ascii=False)
+            print(f"✓ Results exported to: {export_filename}")
 
         # Seed to Directus if requested
         seeding_success = True
@@ -228,14 +137,15 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
 
             self.update_state(state='PROCESSING', meta={'status': 'Seeding to Directus'})
 
-            # The results_dict is already in the correct format for directus_seeder
-            seeder_format = {document_name: results_dict}
+            # Convert results to format expected by directus_seeder
+            seeder_format = {product_id: results_dict}
 
+            from directus_tools import seed_to_directus
             seeding_success = seed_to_directus(
                 analysis_results=seeder_format,
                 product_id=product_id,
                 dry_run=dry_run_directus,
-                taxonomy_data=analyzer.taxonomy_data
+                taxonomy_data=None  # Simplified worker doesn't need this format
             )
 
             if seeding_success:
