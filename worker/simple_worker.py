@@ -9,20 +9,81 @@ from typing import Dict, List, Any, Optional
 from gql import gql, Client
 from gql.transport.requests import RequestsHTTPTransport
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
+from prompt_manager import PromptManager
 
 
 class AnalysisResult(BaseModel):
-    """Simple analysis result model"""
-    item_name: str
-    is_included: bool
-    section_reference: str = ""
-    full_text_part: str = ""
-    llm_summary: str = ""
-    description: str = ""
-    unit: str = ""
-    value: str = ""
-    input_prompt: str = ""  # Store the entire input prompt used for analysis
+    """Strict analysis result model with numeric value validation"""
+    item_name: str = Field(..., description="Name of the analyzed item")
+    is_included: bool = Field(..., description="Whether the item is included in the insurance coverage")
+    section_reference: str = Field(..., description="Document section reference where the item was found")
+    full_text_part: str = Field(..., description="Full text excerpt from the document")
+    llm_summary: str = Field(..., description="LLM-generated summary of the analysis")
+    description: str = Field(..., description="Description of what the item covers")
+    unit: str = Field(..., description="Unit of measurement (e.g., CHF, days, percent)")
+    value: Optional[float] = Field(None, description="Numeric value as number - clean numeric value only (e.g., 50000, 1500) or null if no value")
+    unlimited: bool = Field(False, description="Whether this item has unlimited coverage (true for 'unbegrenzt', 'unlimited', etc.)")
+    input_prompt: str = Field(..., description="The input prompt used for this analysis")
+    
+    @field_validator('value', mode='before')
+    @classmethod
+    def validate_value(cls, v):
+        """Convert empty strings and non-numeric values to None"""
+        if v == '' or v == 'N/A' or v == '0.0':
+            return None
+        if isinstance(v, str):
+            # Try to parse Swiss number format
+            cleaned = v.replace("'", "").replace(",", "")
+            try:
+                return float(cleaned)
+            except (ValueError, TypeError):
+                return None
+        return v
+    
+    @classmethod
+    def model_json_schema(cls, by_alias=True, ref_template='#/$defs/{model}'):
+        """Override to add additionalProperties: false and ensure all fields are required for OpenAI structured output"""
+        schema = super().model_json_schema(by_alias=by_alias, ref_template=ref_template)
+        schema['additionalProperties'] = False
+        
+        # OpenAI requires ALL properties to be in the required array
+        if 'properties' in schema:
+            schema['required'] = list(schema['properties'].keys())
+        
+        return schema
+    
+    class Config:
+        """Pydantic configuration for strict validation"""
+        json_schema_extra = {
+            "additionalProperties": False,
+            "examples": [
+                {
+                    "item_name": "coverage_limit",
+                    "is_included": True,
+                    "section_reference": "Section A.1",
+                    "full_text_part": "Maximum coverage of 50'000 CHF per event",
+                    "llm_summary": "Coverage limit found with maximum amount specified",
+                    "description": "Maximum coverage amount per insurance event", 
+                    "unit": "CHF",
+                    "value": 50000,
+                    "unlimited": False,
+                    "input_prompt": "..."
+                },
+                {
+                    "item_name": "medical_assistance",
+                    "is_included": True,
+                    "section_reference": "Section F.3",
+                    "full_text_part": "Medical assistance coverage is unlimited",
+                    "llm_summary": "Unlimited medical assistance coverage found",
+                    "description": "Unlimited medical assistance coverage", 
+                    "unit": "N/A",
+                    "value": None,
+                    "unlimited": True,
+                    "input_prompt": "..."
+                }
+            ]
+        }  # Store the entire input prompt used for analysis
 
 
 class TaxonomyItem(BaseModel):
@@ -91,11 +152,170 @@ class HierarchyNode:
         return context
 
 
+def get_debug_filename(product_id: str, tier: str) -> str:
+    """Generate debug filename for a specific tier."""
+    return f"debug/{product_id}_{tier}.debug.json"
+
+
+def save_debug_results(product_id: str, tier: str, results: Dict[str, AnalysisResult]):
+    """Save analysis results to debug file with taxonomy_relationship_id as key."""
+    filename = get_debug_filename(product_id, tier)
+    
+    # Ensure debug directory exists
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    
+    debug_data = {
+        "tier": tier,
+        "product_id": product_id,
+        "results": {}
+    }
+    
+    # Convert results to dictionaries with taxonomy_relationship_id as key
+    if results:
+        for taxonomy_relationship_id, analysis_result in results.items():
+            if hasattr(analysis_result, 'dict'):  # Pydantic model
+                debug_data["results"][taxonomy_relationship_id] = analysis_result.dict()
+            else:
+                debug_data["results"][taxonomy_relationship_id] = analysis_result
+    
+    with open(filename, 'w', encoding='utf-8') as f:
+        json.dump(debug_data, f, indent=2, ensure_ascii=False)
+
+
+def append_debug_result(product_id: str, tier: str, taxonomy_relationship_id: str, analysis_result: AnalysisResult, entity_category: str = None):
+    """Append a single analysis result to the debug file incrementally."""
+    if not product_id:  # Skip if no product_id available
+        return
+        
+    filename = get_debug_filename(product_id, tier)
+    
+    # Ensure debug directory exists
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    
+    # Load existing debug data or create new
+    debug_data = {
+        "tier": tier,
+        "product_id": product_id,
+        "results": {}
+    }
+    
+    # Try to load existing file
+    if os.path.exists(filename):
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                debug_data = json.load(f)
+        except Exception as e:
+            # Continue with empty debug_data structure
+            pass
+    
+    # Prepare the result data with entity category
+    if hasattr(analysis_result, 'dict'):  # Pydantic model
+        result_data = analysis_result.dict()
+    else:
+        result_data = analysis_result
+    
+    # Add entity category to the result data
+    if entity_category:
+        result_data["entity_category"] = entity_category
+    
+    # Add/update the new result
+    debug_data["results"][taxonomy_relationship_id] = result_data
+    
+    # Save updated debug data
+    with open(filename, 'w', encoding='utf-8') as f:
+        json.dump(debug_data, f, indent=2, ensure_ascii=False)
+
+
+def load_debug_results(product_id: str, tier: str) -> tuple[Optional[Dict[str, AnalysisResult]], bool]:
+    """
+    Load analysis results from debug file.
+    Returns (results_dict, is_valid) tuple.
+    """
+    filename = get_debug_filename(product_id, tier)
+    
+    if not os.path.exists(filename):
+        return None, False
+    
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            debug_data = json.load(f)
+        
+        # Ensure debug_data has the expected structure
+        if not isinstance(debug_data, dict) or "results" not in debug_data:
+            print(f"❌ Invalid debug file structure: {filename}")
+            return None, False
+        
+        # Handle empty results case
+        if not debug_data["results"]:
+            return {}, True
+        
+        # Convert back to AnalysisResult objects
+        results = {}
+        for taxonomy_relationship_id, result_dict in debug_data["results"].items():
+            try:
+                results[taxonomy_relationship_id] = AnalysisResult(**result_dict)
+            except Exception as e:
+                print(f"❌ Error loading debug result for {taxonomy_relationship_id}: {e}")
+                return None, False
+        
+        return results, True
+        
+    except Exception as e:
+        print(f"❌ Error reading debug file {filename}: {e}")
+        return None, False
+
+def load_debug_results_with_categories(product_id: str, tier: str) -> tuple[Optional[Dict[str, AnalysisResult]], Optional[Dict[str, str]], bool]:
+    """
+    Load analysis results from debug file with entity categories.
+    Returns (results_dict, categories_dict, is_valid) tuple.
+    """
+    filename = get_debug_filename(product_id, tier)
+    
+    if not os.path.exists(filename):
+        return None, None, False
+    
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            debug_data = json.load(f)
+        
+        # Ensure debug_data has the expected structure
+        if not isinstance(debug_data, dict) or "results" not in debug_data:
+            print(f"❌ Invalid debug file structure: {filename}")
+            return None, None, False
+        
+        # Handle empty results case
+        if not debug_data["results"]:
+            return {}, {}, True
+        
+        # Convert back to AnalysisResult objects and extract categories
+        results = {}
+        categories = {}
+        for taxonomy_relationship_id, result_dict in debug_data["results"].items():
+            try:
+                # Extract entity category if present
+                entity_category = result_dict.pop("entity_category", None)
+                if entity_category:
+                    categories[taxonomy_relationship_id] = entity_category
+                
+                results[taxonomy_relationship_id] = AnalysisResult(**result_dict)
+            except Exception as e:
+                print(f"❌ Error loading debug result for {taxonomy_relationship_id}: {e}")
+                return None, None, False
+        
+        return results, categories, True
+        
+    except Exception as e:
+        print(f"❌ Error reading debug file {filename}: {e}")
+        return None, None, False
+
+
 class SimplifiedDocumentAnalyzer:
     """Simplified document analyzer processing nested hierarchy with 15 concurrent requests"""
     
-    def __init__(self, dcm_id: str):
+    def __init__(self, dcm_id: str, product_id: str = None):
         self.dcm_id = dcm_id
+        self.product_id = product_id  # Required for debug functionality
+        self.debug_enabled = False  # Set by analyze_document method
         self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
         
         # Initialize GraphQL client
@@ -116,20 +336,8 @@ class SimplifiedDocumentAnalyzer:
         self.hierarchy_nodes: List[HierarchyNode] = []
         self.semaphore = asyncio.Semaphore(15)  # Limit to 15 concurrent requests
         
-        # Base system prompt
-        self.base_system_prompt = """Sie sind ein hochspezialisierter Experte für die Analyse von schweizerischen Versicherungs-AVB (Allgemeine Versicherungsbedingungen).
-
-KRITISCHE ANALYSEPRINZIPIEN:
-
-1. VOLLSTÄNDIGKEIT UND GRÜNDLICHKEIT:
-   - Sie MÜSSEN das gesamte Dokument von der ersten bis zur letzten Seite systematisch durcharbeiten
-   - Brechen Sie NIEMALS vorzeitig ab - relevante Informationen können auf der letzten Seite stehen
-
-2. ABSOLUTE GENAUIGKEIT:
-   - Analysieren Sie AUSSCHLIESSLICH auf Basis der im Dokument explizit vorhandenen Informationen
-   - Machen Sie KEINE Annahmen oder Interpretationen über nicht explizit genannte Sachverhalte
-
-Die zu analysierenden AVB werden Ihnen als Markdown-formatierter Text bereitgestellt."""
+        # Initialize prompt manager with exact prompts from worker_main.py
+        self.prompt_manager = PromptManager()
 
     def fetch_taxonomy_data(self) -> None:
         """Fetch complete taxonomy hierarchy from GraphQL and build nested structure"""
@@ -226,206 +434,26 @@ Die zu analysierenden AVB werden Ihnen als Markdown-formatierter Text bereitgest
         return count
 
     def _create_fresh_llm(self) -> ChatOpenAI:
-        """Create a fresh LLM instance to avoid cache contamination"""
+        """Create a fresh LLM instance with structured output schema"""
+        # Generate JSON schema from AnalysisResult model
+        analysis_schema = AnalysisResult.model_json_schema()
+        
         return ChatOpenAI(
             model=self.openai_model,
             temperature=0,
-            model_kwargs={"response_format": {"type": "json_object"}}
+            model_kwargs={
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "analysis_result",
+                        "description": "Structured analysis result for insurance document processing",
+                        "schema": analysis_schema,
+                        "strict": True
+                    }
+                }
+            }
         )
 
-    def _create_segment_prompt(self, taxonomy_item: TaxonomyItem) -> str:
-        """Create analysis prompt for a segment"""
-        prompt = f"""{self.base_system_prompt}
-
-**ZIEL:**
-Analysieren Sie, ob das unten beschriebene Versicherungssegment im vorliegenden AVB-Dokument abgedeckt ist. Falls ja, extrahieren Sie alle relevanten Segmentparameter.
-
-**ZU ANALYSIERENDES SEGMENT:**
-- **Bezeichnung:** {taxonomy_item.name}
-- **Beschreibung:** {taxonomy_item.description}
-- **Alternative Begriffe:** {', '.join(taxonomy_item.aliases)}
-- **Beispiele:** {', '.join(taxonomy_item.examples)}
-
-**ANALYSEANWEISUNGEN:**
-{taxonomy_item.llm_instruction}
-
-**ANALYSEKRITERIEN:**
-Das Segment ({taxonomy_item.name}) ist abgedeckt DANN UND NUR DANN (IFF), wenn es explizit im Versicherungsdokument erwähnt oder beschrieben wird.
-- Suchen Sie nach direkten Erwähnungen des Segments oder seiner Synonyme
-- Prüfen Sie Inhaltsverzeichnisse, Abschnittsüberschriften und Textinhalte
-- Berücksichtigen Sie auch indirekte Beschreibungen, die eindeutig auf das Segment hinweisen
-
-**VORGEHEN BEI AUFFINDEN DES SEGMENTS:**
-- Extrahieren Sie die relevante Abschnittsreferenz (z.B. Abschnittsnummer, Überschrift)
-- Erfassen Sie den vollständigen Wortlaut des relevanten Abschnitts
-- Erstellen Sie eine klare Zusammenfassung der Abdeckung
-- Setzen Sie is_included auf true
-
-**VORGEHEN WENN SEGMENT NICHT ABGEDECKT:**
-- Setzen Sie is_included auf false
-- Geben Sie eine kurze Erklärung in der Zusammenfassung
-- Verwenden Sie "N/A" für section_reference und full_text_part
-
-**PFLICHTANGABEN:**
-- Setzen Sie item_name immer auf: "{taxonomy_item.name}"
-- Setzen Sie description auf: Eine kurze Beschreibung der Segmentabdeckung
-- Setzen Sie unit auf: "N/A" (Segmente haben typischerweise keine Einheiten)
-- Setzen Sie value auf: "0.0" (Segmente sind Abdeckungsbereiche, keine spezifischen Werte)
-
-Geben Sie EXAKT die Antwort im folgenden JSON-Format zurück:
-{{
-    "item_name": "{taxonomy_item.name}",
-    "is_included": true/false,
-    "section_reference": "Genauer Abschnitt/Seitenzahl wo gefunden",
-    "full_text_part": "Vollständiger relevanter Textauszug aus dem Dokument",
-    "llm_summary": "Kurze Zusammenfassung der gefundenen Deckung",
-    "description": "Was genau ist abgedeckt",
-    "unit": "N/A",
-    "value": "0.0"
-}}"""
-        return prompt
-
-    def _create_benefit_prompt(self, taxonomy_item: TaxonomyItem, hierarchy_context: str = "") -> str:
-        """Create analysis prompt for a benefit with hierarchy context"""
-        prompt = f"""{self.base_system_prompt}
-
-**ZIEL:**
-Analysieren Sie, ob die unten beschriebene Leistung im vorliegenden AVB-Dokument anwendbar ist. Falls ja, extrahieren Sie alle relevanten Leistungsparameter.
-
-{hierarchy_context}
-
-**ZU ANALYSIERENDE LEISTUNG:**
-- **Bezeichnung:** {taxonomy_item.name}
-- **Beschreibung:** {taxonomy_item.description}
-- **Alternative Begriffe:** {', '.join(taxonomy_item.aliases)}
-- **Beispiele:** {', '.join(taxonomy_item.examples)}
-- **Einheit:** {taxonomy_item.unit if taxonomy_item.unit else 'N/A'}
-- **Datentyp:** {taxonomy_item.data_type if taxonomy_item.data_type else 'N/A'}
-
-**ANALYSEANWEISUNGEN:**
-{taxonomy_item.llm_instruction}
-
-**ANALYSEKRITERIEN:**
-Die Leistung ({taxonomy_item.name}) ist anwendbar DANN UND NUR DANN (IFF), wenn sie explizit im Versicherungsdokument erwähnt oder beschrieben wird.
-- Leistungen können überall im Dokument erwähnt werden
-- Wenn eine Leistung für ein Segment anwendbar ist, steht sie normalerweise in Verbindung mit Abdeckungsmodifikatoren (Bedingungen, Limits und Ausschlüsse), die in einem späteren Stadium extrahiert werden
-
-**WICHTIGER HINWEIS ZU MODIFIKATOREN:**
-Erwähnen Sie in dieser Analyse KEINE spezifischen Modifikatoren (Bedingungen, Limits, Ausschlüsse). Diese werden in einer separaten Analysestufe behandelt. Konzentrieren Sie sich ausschließlich auf die Grundleistung selbst.
-
-**VORGEHEN BEI AUFFINDEN DER LEISTUNG:**
-- Extrahieren Sie die relevante Abschnittsreferenz (z.B. Abschnittsnummer, Überschrift)
-- Erfassen Sie den vollständigen Wortlaut des relevanten Abschnitts, in dem die Leistung beschrieben wird
-- Erstellen Sie eine klare Zusammenfassung der Leistungsabdeckung
-- Setzen Sie is_included auf true
-
-**VORGEHEN WENN LEISTUNG NICHT ANWENDBAR:**
-- Setzen Sie is_included auf false
-- Geben Sie eine kurze Erklärung in der Zusammenfassung
-- Verwenden Sie "N/A" für section_reference und full_text_part
-
-**PFLICHTANGABEN:**
-- Setzen Sie item_name immer auf: "{taxonomy_item.name}"
-- Setzen Sie description auf: Eine Beschreibung der spezifischen Leistungsabdeckung
-- Setzen Sie unit auf: "{taxonomy_item.unit if taxonomy_item.unit else 'N/A'}"
-- Setzen Sie value auf: Den spezifischen Wert/Betrag, der im Dokument für diese Leistung gefunden wurde
-
-Geben Sie EXAKT die Antwort im folgenden JSON-Format zurück:
-{{
-    "item_name": "{taxonomy_item.name}",
-    "is_included": true/false,
-    "section_reference": "Genauer Abschnitt/Seitenzahl wo gefunden",
-    "full_text_part": "Vollständiger relevanter Textauszug aus dem Dokument",
-    "llm_summary": "Kurze Zusammenfassung der gefundenen Deckung",
-    "description": "Was genau ist abgedeckt",
-    "unit": "{taxonomy_item.unit if taxonomy_item.unit else 'N/A'}",
-    "value": "Spezifischer Betrag oder Wert falls gefunden"
-}}"""
-        return prompt
-
-    def _create_modifier_prompt(self, taxonomy_item: TaxonomyItem, hierarchy_context: str = "") -> str:
-        """Create analysis prompt for a modifier with strict hierarchy context requirements"""
-        modifier_type = taxonomy_item.category.replace('_type', '')  # limit_type -> limit
-        modifier_type_title = modifier_type.upper()
-        
-        # Extract hierarchy component names for strict checking
-        hierarchy_components = []
-        if hierarchy_context:
-            lines = hierarchy_context.split('\n')
-            for line in lines:
-                if line.strip().startswith('- ') and ':' in line:
-                    component_name = line.split(':')[0].replace('- ', '').strip()
-                    if component_name != 'product':  # Skip product level
-                        hierarchy_components.append(component_name)
-        
-        hierarchy_requirement = ""
-        if hierarchy_components:
-            component_list = " UND ".join(f"'{comp}'" for comp in hierarchy_components)
-            hierarchy_requirement = f"""
-**WICHTIG**: Ermitteln Sie den zu analysierenden Modifikator AUSSCHLIESSLICH innerhalb des oben genannten Hierarchiekontexts.
-
-Der Modifikator ({taxonomy_item.name}) ist anwendbar DANN UND NUR DANN (IFF), wenn ALLE der folgenden Bedingungen erfüllt sind:
-1. Der Modifikator wird im Dokument explizit erwähnt.
-2. Die Erwähnung des Modifikators steht in einem direkten und untrennbaren semantischen Zusammenhang mit ALLEN Teilen des ZU ANALYSIERENDEN HIERARCHIEKONTEXTS. Das bedeutet, der {modifier_type} muss sich explizit auf {component_list} beziehen.
-3. Es dürfen KEINE {modifier_type}e oder ähnliche Modifikatoren berücksichtigt werden, die für andere Module oder Leistungsteile der Versicherung gelten, die nicht explizit im definierten Hierarchiekontext ({", ".join(hierarchy_components)}) liegen.
-
-**STRIKTE AUSSCHLUSSKRITERIEN:**
-- Ignorieren Sie {modifier_type}e, die sich auf andere Segmente oder Leistungen beziehen
-- Ignorieren Sie allgemeine {modifier_type}e, die nicht spezifisch für den Hierarchiekontext gelten
-- Berücksichtigen Sie NUR {modifier_type}e, die explizit und ausschließlich für den gesamten Hierarchiekontext relevant sind"""
-        
-        prompt = f"""{self.base_system_prompt}
-
-**ZIEL:**
-Analysieren Sie, ob der unten beschriebene Modifikator (Bedingung, Limit oder Ausschluss) im vorliegenden AVB-Dokument anwendbar ist. Falls ja, extrahieren Sie alle erforderlichen Modifikator-Parameter.
-
-{hierarchy_context}
-
-**ZU ANALYSIERENDER MODIFIKATOR:**
-- **Bezeichnung:** {taxonomy_item.name}
-- **Beschreibung:** {taxonomy_item.description}
-- **Alternative Begriffe:** {', '.join(taxonomy_item.aliases)}
-- **Beispiele:** {', '.join(taxonomy_item.examples)}
-- **Erwartete Einheit:** {taxonomy_item.unit if taxonomy_item.unit else 'N/A'}
-- **Erwarteter Datentyp:** {taxonomy_item.data_type if taxonomy_item.data_type else 'N/A'}
-
-**ANALYSEANWEISUNGEN FÜR {modifier_type_title}:**
-{taxonomy_item.llm_instruction if taxonomy_item.llm_instruction else f'Suchen Sie nach {modifier_type}n im Zusammenhang mit der relevanten Leistung oder dem Segment.'}
-
-{hierarchy_requirement}
-
-**VORGEHEN BEI AUFFINDEN DES MODIFIKATORS:**
-- Prüfen Sie, ob der {modifier_type} sich explizit auf ALLE Komponenten des Hierarchiekontexts bezieht
-- Extrahieren Sie die relevante Abschnittsreferenz (z.B. Abschnittsnummer, Überschrift)
-- Erfassen Sie den vollständigen Wortlaut des relevanten Abschnitts, in dem der {modifier_type} beschrieben wird
-- Erstellen Sie eine klare Zusammenfassung dessen, was dieser {modifier_type} spezifiziert
-- Setzen Sie is_included auf true NUR wenn alle Hierarchieanforderungen erfüllt sind
-- Setzen Sie description auf: Was dieser {modifier_type} abdeckt oder einschränkt
-- Setzen Sie unit auf: Die gefundene Maßeinheit (z.B. CHF, Tage, Prozent) oder "N/A"
-- Setzen Sie value auf: Den spezifischen Wert, Betrag oder die Bedingung, die im Dokument gefunden wurde
-
-**VORGEHEN WENN MODIFIKATOR NICHT ERWÄHNT ODER NICHT ZUTREFFEND:**
-- Setzen Sie is_included auf false
-- Geben Sie eine kurze Erklärung in der Zusammenfassung, warum der {modifier_type} nicht anwendbar ist
-- Verwenden Sie "N/A" für section_reference, full_text_part, description und unit
-- Verwenden Sie "0.0" für value
-
-**PFLICHTANGABEN:**
-- Setzen Sie item_name immer auf: "{taxonomy_item.name}"
-- Begründen Sie in llm_summary EXPLIZIT, warum der {modifier_type} für den spezifischen Hierarchiekontext anwendbar oder nicht anwendbar ist
-
-Geben Sie EXAKT die Antwort im folgenden JSON-Format zurück:
-{{
-    "item_name": "{taxonomy_item.name}",
-    "is_included": true/false,
-    "section_reference": "Genauer Abschnitt/Seitenzahl wo gefunden",
-    "full_text_part": "Vollständiger relevanter Textauszug aus dem Dokument",
-    "llm_summary": "Begründung warum dieser {modifier_type} für den Hierarchiekontext anwendbar/nicht anwendbar ist",
-    "description": "Was dieser {modifier_type} abdeckt oder einschränkt",
-    "unit": "{taxonomy_item.unit if taxonomy_item.unit else 'N/A'}",
-    "value": "Spezifischer Wert, Betrag oder Bedingung"
-}}"""
-        return prompt
 
     async def _analyze_single_node(self, node: HierarchyNode, document_text: str) -> None:
         """Analyze a single node with semaphore control"""
@@ -437,16 +465,16 @@ Geben Sie EXAKT die Antwort im folgenden JSON-Format zurück:
                 # Build hierarchy context from parent nodes
                 hierarchy_context = node.get_hierarchy_context()
                 
-                # Select appropriate prompt based on category
+                # Select appropriate prompt based on category using PromptManager
                 if taxonomy_item.category == 'segment_type':
-                    prompt_text = self._create_segment_prompt(taxonomy_item)
+                    prompt_text = self.prompt_manager.create_segment_prompt(taxonomy_item)
                 elif taxonomy_item.category == 'benefit_type':
-                    prompt_text = self._create_benefit_prompt(taxonomy_item, hierarchy_context)
+                    prompt_text = self.prompt_manager.create_benefit_prompt(taxonomy_item, hierarchy_context)
                 elif taxonomy_item.category in ['limit_type', 'condition_type', 'exclusion_type']:
-                    prompt_text = self._create_modifier_prompt(taxonomy_item, hierarchy_context)
+                    prompt_text = self.prompt_manager.create_modifier_prompt(taxonomy_item, hierarchy_context)
                 else:
                     # Fallback for any unknown category
-                    prompt_text = self._create_segment_prompt(taxonomy_item)
+                    prompt_text = self.prompt_manager.create_segment_prompt(taxonomy_item)
                 
                 # Combine prompt with document
                 full_prompt = f"{prompt_text}\n\nZu analysierendes AVB-Dokument:\n\n{document_text}"
@@ -462,6 +490,16 @@ Geben Sie EXAKT die Antwort im folgenden JSON-Format zurück:
                 
                 print(f"✓ Analyzed: {taxonomy_item.name} -> {node.analysis_result.is_included}")
                 
+                # Save to debug file immediately if debug is enabled
+                if self.debug_enabled and self.product_id:
+                    append_debug_result(
+                        self.product_id, 
+                        "hierarchical_analysis", 
+                        taxonomy_item.taxonomy_relationship_id, 
+                        node.analysis_result,
+                        taxonomy_item.category
+                    )
+                
             except Exception as e:
                 print(f"✗ Error analyzing {node.taxonomy_item.name}: {e}")
                 # Set default result on error
@@ -476,6 +514,16 @@ Geben Sie EXAKT die Antwort im folgenden JSON-Format zurück:
                     value="",
                     input_prompt=f"Error occurred while generating prompt for {node.taxonomy_item.name}"
                 )
+                
+                # Save error result to debug file immediately if debug is enabled
+                if self.debug_enabled and self.product_id:
+                    append_debug_result(
+                        self.product_id, 
+                        "hierarchical_analysis", 
+                        node.taxonomy_item.taxonomy_relationship_id, 
+                        node.analysis_result,
+                        node.taxonomy_item.category
+                    )
 
     async def _analyze_hierarchy_recursive(self, nodes: List[HierarchyNode], document_text: str) -> None:
         """Analyze hierarchy recursively, depth-first to complete nested structures"""
@@ -511,10 +559,124 @@ Geben Sie EXAKT die Antwort im folgenden JSON-Format zurück:
         if child_tasks:
             await asyncio.gather(*child_tasks)
 
-    def _collect_results_recursive(self, nodes: List[HierarchyNode], results: Dict[str, Dict]) -> None:
-        """Collect results from hierarchy recursively"""
+    def _collect_debug_results_from_nodes(self, nodes: List[HierarchyNode]) -> Dict[str, AnalysisResult]:
+        """Collect analysis results from nodes for debug storage, using taxonomy_relationship_id as key"""
+        results = {}
+        for node in nodes:
+            if node.analysis_result:
+                results[node.taxonomy_item.taxonomy_relationship_id] = node.analysis_result
+            # Recursively collect from children
+            child_results = self._collect_debug_results_from_nodes(node.children)
+            results.update(child_results)
+        return results
+
+    def _apply_debug_results_to_nodes(self, nodes: List[HierarchyNode], debug_results: Dict[str, AnalysisResult]) -> None:
+        """Apply loaded debug results back to hierarchy nodes"""
+        for node in nodes:
+            taxonomy_rel_id = node.taxonomy_item.taxonomy_relationship_id
+            if taxonomy_rel_id in debug_results:
+                node.analysis_result = debug_results[taxonomy_rel_id]
+                print(f"🔄 Restored analysis result for: {node.taxonomy_item.name} -> {node.analysis_result.is_included}")
+            # Recursively apply to children
+            self._apply_debug_results_to_nodes(node.children, debug_results)
+
+    def _collect_results_hierarchical(self, nodes: List[HierarchyNode]) -> List[Dict]:
+        """Collect results in hierarchical format expected by DirectusSeeder"""
+        hierarchical_segments = []
+        
+        print(f"🔍 Collecting hierarchical results from {len(nodes)} nodes")
+        
+        for node in nodes:
+            print(f"🔍 Checking node: {node.taxonomy_item.name} (category: {node.taxonomy_item.category})")
+            
+            if node.analysis_result:
+                print(f"  📊 Has analysis result: {node.analysis_result.item_name} -> {node.analysis_result.is_included}")
+            else:
+                print(f"  ❌ No analysis result")
+                
+            if node.analysis_result and node.taxonomy_item.category == 'segment_type' and node.analysis_result.is_included:
+                print(f"  ✅ Adding segment: {node.analysis_result.item_name}")
+                
+                # Build segment entry with nested benefits and modifiers
+                segment_data = {
+                    "taxonomy_relationship_id": node.taxonomy_item.taxonomy_relationship_id,
+                    "item_name": node.analysis_result.item_name,
+                    "is_included": node.analysis_result.is_included,
+                    "section_reference": node.analysis_result.section_reference,
+                    "full_text_part": node.analysis_result.full_text_part,
+                    "llm_summary": node.analysis_result.llm_summary,
+                    "description": node.analysis_result.description,
+                    "unit": node.analysis_result.unit,
+                    "value": node.analysis_result.value,
+                    "input_prompt": node.analysis_result.input_prompt,
+                    "benefits": [],
+                    "conditions": [],
+                    "limits": [],
+                    "exclusions": []
+                }
+                
+                # Process children recursively to find benefits and modifiers
+                self._collect_children_hierarchical(node.children, segment_data)
+                
+                segment_entry = {node.taxonomy_item.taxonomy_relationship_id: segment_data}
+                hierarchical_segments.append(segment_entry)
+                
+            # Recursively check children
+            if node.children:
+                print(f"  🔍 Checking {len(node.children)} children...")
+                child_segments = self._collect_results_hierarchical(node.children)
+                hierarchical_segments.extend(child_segments)
+        
+        print(f"🎯 Total hierarchical segments found: {len(hierarchical_segments)}")
+        return hierarchical_segments
+    
+    def _collect_children_hierarchical(self, nodes: List[HierarchyNode], parent_data: Dict) -> None:
+        """Recursively collect children (benefits and modifiers) into parent structure"""
         for node in nodes:
             if node.analysis_result and node.analysis_result.is_included:
+                item_data = {
+                    "taxonomy_relationship_id": node.taxonomy_item.taxonomy_relationship_id,
+                    "item_name": node.analysis_result.item_name,
+                    "is_included": node.analysis_result.is_included,
+                    "section_reference": node.analysis_result.section_reference,
+                    "full_text_part": node.analysis_result.full_text_part,
+                    "llm_summary": node.analysis_result.llm_summary,
+                    "description": node.analysis_result.description,
+                    "unit": node.analysis_result.unit,
+                    "value": node.analysis_result.value,
+                    "input_prompt": node.analysis_result.input_prompt
+                }
+                
+                if node.taxonomy_item.category == 'benefit_type':
+                    # Add benefit with nested modifiers
+                    benefit_data = item_data.copy()
+                    benefit_data.update({"conditions": [], "limits": [], "exclusions": []})
+                    
+                    # Process benefit's children (modifiers)
+                    self._collect_children_hierarchical(node.children, benefit_data)
+                    
+                    benefit_entry = {node.taxonomy_item.taxonomy_relationship_id: benefit_data}
+                    parent_data["benefits"].append(benefit_entry)
+                    
+                elif node.taxonomy_item.category == 'condition_type':
+                    condition_entry = {node.taxonomy_item.taxonomy_relationship_id: item_data}
+                    parent_data["conditions"].append(condition_entry)
+                    
+                elif node.taxonomy_item.category == 'limit_type':
+                    limit_entry = {node.taxonomy_item.taxonomy_relationship_id: item_data}
+                    parent_data["limits"].append(limit_entry)
+                    
+                elif node.taxonomy_item.category == 'exclusion_type':
+                    exclusion_entry = {node.taxonomy_item.taxonomy_relationship_id: item_data}
+                    parent_data["exclusions"].append(exclusion_entry)
+            
+            # Process children even if current node is not included (for completeness)
+            self._collect_children_hierarchical(node.children, parent_data)
+
+    def _collect_results_recursive(self, nodes: List[HierarchyNode], results: Dict[str, Dict]) -> None:
+        """Collect ALL analyzed results from hierarchy recursively - both included and excluded items"""
+        for node in nodes:
+            if node.analysis_result:  # Collect ALL analyzed items, not just included ones
                 category_key = node.taxonomy_item.category.replace('_type', 's')  # segment_type -> segments
                 if category_key == 'segments':
                     category_key = 'segments'
@@ -543,14 +705,33 @@ Geben Sie EXAKT die Antwort im folgenden JSON-Format zurück:
             # Always process children regardless of parent inclusion status for complete results
             self._collect_results_recursive(node.children, results)
 
-    async def analyze_document(self, document_text: str) -> Dict[str, Any]:
-        """Main analysis function - analyze document against nested hierarchy"""
+    async def analyze_document(self, document_text: str, debug: bool = False) -> Dict[str, Any]:
+        """Main analysis function - analyze document against nested hierarchy with debug support"""
         print("Starting hierarchical document analysis...")
         print(f"Using semaphore with limit of 15 concurrent requests")
         print(f"📏 Conditional analysis: Modifiers only analyzed for included segments/benefits")
         
-        # Start recursive analysis from root nodes
-        await self._analyze_hierarchy_recursive(self.hierarchy_nodes, document_text)
+        # Set debug flag for incremental saving
+        self.debug_enabled = debug
+        
+        # Try to load existing debug results if debug mode is enabled and product_id is available
+        if debug and self.product_id:
+            debug_results, is_valid = load_debug_results(self.product_id, "hierarchical_analysis")
+            
+            if is_valid and debug_results:
+                print(f"🔄 Found existing debug file - applying {len(debug_results)} cached results")
+                self._apply_debug_results_to_nodes(self.hierarchy_nodes, debug_results)
+                print("✅ Analysis skipped - using cached debug results")
+            else:
+                # Start recursive analysis from root nodes (with incremental debug saving)
+                await self._analyze_hierarchy_recursive(self.hierarchy_nodes, document_text)
+        else:
+            # Regular analysis without debug
+            if debug and not self.product_id:
+                print("⚠️ Debug mode requested but no product_id provided - running without debug")
+            
+            # Start recursive analysis from root nodes
+            await self._analyze_hierarchy_recursive(self.hierarchy_nodes, document_text)
         
         # Collect all results
         results = {}
@@ -561,24 +742,69 @@ Geben Sie EXAKT die Antwort im folgenden JSON-Format zurück:
             if category not in results:
                 results[category] = {}
         
+        # Count included vs excluded items for better reporting
+        segments_included = sum(1 for item in results['segments'].values() if item['is_included'])
+        segments_excluded = len(results['segments']) - segments_included
+        
+        benefits_included = sum(1 for item in results['benefits'].values() if item['is_included'])
+        benefits_excluded = len(results['benefits']) - benefits_included
+        
+        modifiers_included = sum(1 for item in results['modifiers'].values() if item['is_included'])
+        modifiers_excluded = len(results['modifiers']) - modifiers_included
+        
         print(f"\n🎯 Hierarchical Analysis Complete:")
-        print(f"  - {len(results['segments'])} segments found and included")
-        print(f"  - {len(results['benefits'])} benefits found and included") 
-        print(f"  - {len(results['modifiers'])} modifiers found and included")
-        print(f"💡 Note: Only modifiers for included segments/benefits were analyzed")
+        print(f"  - {len(results['segments'])} segments analyzed ({segments_included} included, {segments_excluded} excluded)")
+        print(f"  - {len(results['benefits'])} benefits analyzed ({benefits_included} included, {benefits_excluded} excluded)")
+        print(f"  - {len(results['modifiers'])} modifiers analyzed ({modifiers_included} included, {modifiers_excluded} excluded)")
+        print(f"💡 Note: All analyzed items (included and excluded) are exported with reasoning")
         
         return results
+    
+    def get_hierarchical_results_for_seeding(self) -> Dict[str, Any]:
+        """Get results in hierarchical format expected by DirectusSeeder"""
+        # If hierarchy_nodes is empty, we need to build the taxonomy first
+        if not self.hierarchy_nodes:
+            print(f"🔄 Hierarchy is empty, fetching taxonomy data...")
+            self.fetch_taxonomy_data()
+        
+        # If we have a product_id, try to load debug results with category information
+        if self.product_id:
+            print(f"🔄 Attempting to load debug results for product: {self.product_id}")
+            debug_results, categories, is_valid = load_debug_results_with_categories(self.product_id, "hierarchical_analysis")
+            
+            if is_valid and debug_results:
+                print(f"✓ Loaded {len(debug_results)} debug results with category info, applying to hierarchy...")
+                # Apply debug results to the hierarchy nodes
+                self._apply_debug_results_to_nodes(self.hierarchy_nodes, debug_results)
+                print(f"✓ Applied debug results to hierarchy nodes")
+                
+                # Print summary of categories found
+                if categories:
+                    category_counts = {}
+                    for cat in categories.values():
+                        category_counts[cat] = category_counts.get(cat, 0) + 1
+                    print(f"📊 Entity categories loaded: {dict(category_counts)}")
+            else:
+                print(f"❌ No valid debug results found for product: {self.product_id}")
+        
+        hierarchical_segments = self._collect_results_hierarchical(self.hierarchy_nodes)
+        
+        return {
+            'segments': hierarchical_segments,
+            'benefits': [],  # Empty since nested under segments
+            'modifiers': []  # Empty since nested under segments  
+        }
 
 
 # Simple test function
 async def main():
     """Test the simplified analyzer"""
-    analyzer = SimplifiedDocumentAnalyzer(dcm_id="test")
+    analyzer = SimplifiedDocumentAnalyzer(dcm_id="test", product_id="test-product")
     analyzer.fetch_taxonomy_data()
     
     # Test with a simple document
     test_document = "This is a test insurance document..."
-    results = await analyzer.analyze_document(test_document)
+    results = await analyzer.analyze_document(test_document, debug=True)
     
     print("\nResults:", json.dumps(results, indent=2, ensure_ascii=False))
 
