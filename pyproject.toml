@@ -10,6 +10,7 @@ dependencies = [
     "gql>=4.0.0",
     "langchain>=0.3.27",
     "langchain-openai>=0.3.33",
+    "langsmith>=0.2.8",
     "openai>=1.107.2",
     "pyjwt>=2.10.1",
     "python-dotenv>=1.1.1",

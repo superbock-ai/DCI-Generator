@@ -29,6 +29,11 @@ class AnalyzerConfig:
     
     # Debug Configuration
     debug_base_dir: str = "debug"
+
+    # LangSmith Configuration (Optional)
+    langsmith_tracing_enabled: bool = False
+    langsmith_api_key: Optional[str] = None
+    langsmith_project: Optional[str] = None
     
     @classmethod
     def from_environment(cls) -> 'AnalyzerConfig':
@@ -62,7 +67,12 @@ class AnalyzerConfig:
         
         # Debug configuration
         debug_base_dir = os.getenv("DEBUG_BASE_DIR", "debug")
-        
+
+        # LangSmith configuration (optional)
+        langsmith_tracing_enabled = os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"
+        langsmith_api_key = os.getenv("LANGCHAIN_API_KEY")
+        langsmith_project = os.getenv("LANGCHAIN_PROJECT", "dci-generator")
+
         return cls(
             openai_api_key=openai_api_key,
             openai_model=openai_model,
@@ -72,7 +82,10 @@ class AnalyzerConfig:
             default_segment_chunks=segment_chunks,
             default_benefit_chunks=benefit_chunks,
             default_modifier_chunks=modifier_chunks,
-            debug_base_dir=debug_base_dir
+            debug_base_dir=debug_base_dir,
+            langsmith_tracing_enabled=langsmith_tracing_enabled,
+            langsmith_api_key=langsmith_api_key,
+            langsmith_project=langsmith_project
         )
     
     @property

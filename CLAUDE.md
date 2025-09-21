@@ -192,12 +192,16 @@ The `worker/worker_main.py` DocumentAnalyzer class implements a comprehensive th
 Required environment variables:
 - `OPENAI_API_KEY`: Your OpenAI API key
 - `DIRECTUS_AUTH_TOKEN`: Authentication token for Directus/GraphQL endpoint
-- `DIRECTUS_SECRET`: JWT secret for API authentication
 - `DIRECTUS_URL`: Directus API endpoint URL
 - `OPENAI_MODEL`: Model to use (optional, defaults to gpt-4o-mini)
 - `REDIS_URL`: Redis connection URL (default: redis://localhost:6379/0)
 - `CELERY_BROKER_URL`: Celery broker URL (default: redis://localhost:6379/0)
 - `CELERY_RESULT_BACKEND`: Celery result backend URL (default: redis://localhost:6379/0)
+
+Optional LangSmith configuration (for LLM tracing and monitoring):
+- `LANGCHAIN_TRACING_V2`: Set to `true` to enable LangSmith tracing
+- `LANGCHAIN_API_KEY`: Your LangSmith API key (get from https://smith.langchain.com)
+- `LANGCHAIN_PROJECT`: Project name in LangSmith (defaults to "dci-generator")
 
 ### Data Flow Architecture
 1. **Job Submission**: FastAPI broker receives REST API requests
@@ -287,6 +291,29 @@ All parameters for analysis jobs:
 - **Cleanup Functionality**: Complete removal of seeded data while preserving original products
 - **Progress Tracking**: Detailed logging and progress indicators during seeding operations
 - **Data Validation**: Robust error handling for Directus API interactions and data validation
+
+### LangSmith Integration & LLM Tracing
+- **Comprehensive LLM Monitoring**: Track all OpenAI API calls with detailed metrics
+- **Performance Analytics**: Monitor token usage, latency, and error rates across analysis sessions
+- **Debugging Tools**: Detailed trace inspection for prompt engineering and optimization
+- **Cost Tracking**: Monitor OpenAI API costs and usage patterns per analysis job
+- **Quality Assurance**: Compare analysis results across different model versions and parameters
+- **Automatic Tagging**: All traces tagged with "dci-generator", "insurance-analysis", "structured-output"
+- **Rich Metadata**: Each trace includes item names, model info, prompt lengths, and analysis context
+- **Project Organization**: Traces organized under configurable LangSmith project name
+- **Optional Integration**: LangSmith tracing can be enabled/disabled without affecting core functionality
+
+**Getting Started with LangSmith**:
+1. Sign up at https://smith.langchain.com
+2. Get your API key from the LangSmith dashboard
+3. Add to your `.env` file:
+   ```bash
+   LANGCHAIN_TRACING_V2=true
+   LANGCHAIN_API_KEY=your-langsmith-api-key
+   LANGCHAIN_PROJECT=dci-generator
+   ```
+4. Restart containers: `docker compose restart`
+5. All LLM calls will now be traced in your LangSmith dashboard
 
 ### Security
 - **Environment variables**: All secrets stored in .env file
