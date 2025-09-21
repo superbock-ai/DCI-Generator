@@ -1,15 +1,15 @@
 """
-PromptManager - Manages all prompts for the SimplifiedDocumentAnalyzer with exact wording from worker_main.py
+PromptManager - Manages all prompts for the DCI extraction worker with exact wording from worker_main.py
 """
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from simple_worker import TaxonomyItem
+    from dci_extraction_worker import TaxonomyItem
 
 
 class PromptManager:
-    """Manages all prompts for the SimplifiedDocumentAnalyzer with exact wording from worker_main.py"""
+    """Manages all prompts for the DCI extraction worker with exact wording from worker_main.py"""
     
     def __init__(self):
         self.base_system_prompt = """Sie sind ein hochspezialisierter Experte für die Analyse von schweizerischen Versicherungs-AVB (Allgemeine Versicherungsbedingungen).

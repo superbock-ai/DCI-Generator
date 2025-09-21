@@ -92,7 +92,7 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
         self.update_state(state='PROCESSING', meta={'status': 'Setting up analyzer'})
 
         # Initialize simplified analyzer
-        from simple_worker import SimplifiedDocumentAnalyzer
+        from dci_extraction_worker import SimplifiedDocumentAnalyzer
         analyzer = SimplifiedDocumentAnalyzer(dcm_id=dcm_id, product_id=product_id)
 
         # Fetch taxonomy data

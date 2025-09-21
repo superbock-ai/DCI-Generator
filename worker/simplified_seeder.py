@@ -1,5 +1,5 @@
 """
-SimplifiedSeeder - Handles Directus seeding for SimplifiedDocumentAnalyzer results
+SimplifiedSeeder - Handles Directus seeding for DCI extraction worker results
 """
 
 import os
@@ -24,7 +24,7 @@ class SimplifiedSeeder:
         Seed analysis results to Directus under an existing dcm_product.
         
         Args:
-            analysis_results: The analysis results dictionary from simple_worker
+            analysis_results: The analysis results dictionary from dci_extraction_worker
             product_id: Existing dcm_product ID to seed data under
             dry_run: If True, only show what would be inserted without actual insertion
             taxonomy_data: Optional pre-fetched taxonomy data to avoid duplicate GraphQL calls
@@ -74,7 +74,7 @@ def seed_to_directus(analysis_results: Dict[str, Any], product_id: str, dry_run:
     Convenience function for seeding analysis results to Directus.
     
     Args:
-        analysis_results: The analysis results dictionary from simple_worker
+        analysis_results: The analysis results dictionary from dci_extraction_worker
         product_id: Existing dcm_product ID to seed data under
         dry_run: If True, only show what would be inserted without actual insertion
         taxonomy_data: Optional pre-fetched taxonomy data to avoid duplicate GraphQL calls
