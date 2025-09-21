@@ -3,6 +3,7 @@ Clean Document Analyzer with proper separation of concerns
 """
 
 import asyncio
+import uuid
 from typing import Dict, List, Any, Optional
 from models import AnalysisResult, HierarchyNode
 from utils import AnalyzerConfig, AnalysisLogger
@@ -326,15 +327,24 @@ class DocumentAnalyzer:
         """Load taxonomy data from GraphQL service"""
         self.hierarchy_nodes = self.graphql_service.fetch_taxonomy_data(self.dcm_id)
     
-    async def analyze_document(self, document_text: str, enable_debug: bool = False) -> Dict[str, Any]:
+    async def analyze_document(self, document_text: str, enable_debug: bool = False, thread_id: str = None) -> Dict[str, Any]:
         """
-        Main analysis method - clean and focused
+        Main analysis method - clean and focused with thread context for LangSmith tracing
         """
+        # Set up thread context for grouping related LLM calls
+        if not thread_id:
+            thread_id = f"{self.product_id}_{uuid.uuid4().hex[:8]}" if self.product_id else f"analysis_{uuid.uuid4().hex[:8]}"
+
+        # Set thread context in LLM service for grouping traces
+        self.llm_service.set_thread_context(thread_id, self.product_id)
+
         # Load taxonomy if not already loaded
         if not self.hierarchy_nodes:
             self.load_taxonomy()
-        
+
         self.logger.analysis_start("hierarchical_analysis", len(self.hierarchy_nodes))
+        if self.llm_service.config.langsmith_tracing_enabled:
+            self.logger.debug_operation("thread_start", f"Starting analysis thread: {thread_id}")
         
         # Handle debug loading
         if enable_debug and self.debug_manager and self.product_id:

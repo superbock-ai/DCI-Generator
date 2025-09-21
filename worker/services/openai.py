@@ -13,11 +13,12 @@ from utils import AnalyzerConfig, get_analysis_logger
 
 class LLMService:
     """Service for managing LLM interactions with native structured output"""
-    
+
     def __init__(self, config: AnalyzerConfig):
         """Initialize the LLM service with configuration"""
         self.config = config
         self.logger = get_analysis_logger()
+        self.thread_id = None  # Will be set by analysis job
 
         # Set up LangSmith environment variables if configured
         self._setup_langsmith_environment()
@@ -33,6 +34,13 @@ class LLMService:
         tracing_status = "enabled" if self.config.langsmith_tracing_enabled else "disabled"
         self.logger.debug_operation("llm_service_init",
                                    f"Initialized LLM service with model: {self.config.openai_model}, LangSmith tracing: {tracing_status}")
+
+    def set_thread_context(self, thread_id: str, product_id: str = None):
+        """Set the thread context for grouping related analysis calls"""
+        self.thread_id = thread_id
+        self.product_id = product_id
+        if self.config.langsmith_tracing_enabled:
+            self.logger.debug_operation("thread_context", f"Set thread context: {thread_id} for product: {product_id}")
 
     def _setup_langsmith_environment(self):
         """Set up LangSmith environment variables for automatic tracing"""
@@ -69,6 +77,12 @@ class LLMService:
                 "analysis_type": "structured_output",
                 "prompt_length": len(prompt)
             }
+
+            # Add thread context for grouping related analysis calls
+            if self.thread_id:
+                metadata["thread_id"] = self.thread_id
+                if hasattr(self, 'product_id') and self.product_id:
+                    metadata["product_id"] = self.product_id
 
             result = await self._structured_llm.ainvoke(
                 prompt,

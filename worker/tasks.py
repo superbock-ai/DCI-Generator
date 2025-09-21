@@ -109,7 +109,9 @@ def analyze_document_task(self, **kwargs) -> Dict[str, Any]:
         asyncio.set_event_loop(loop)
 
         try:
-            results_dict = loop.run_until_complete(analyzer.analyze_document(document_text, debug=debug))
+            # Use Celery task ID as thread_id for LangSmith trace grouping
+            thread_id = f"task_{self.request.id}"
+            results_dict = loop.run_until_complete(analyzer.analyze_document(document_text, debug=debug, thread_id=thread_id))
         finally:
             loop.close()
 

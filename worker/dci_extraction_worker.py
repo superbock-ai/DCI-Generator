@@ -11,30 +11,6 @@ from models import AnalysisResult, TaxonomyItem, HierarchyNode
 from utils import DebugManager, get_config, get_analysis_logger
 from services import LLMService, GraphQLService
 
-
-# AnalysisResult has been moved to models/analysis.py  # Store the entire input prompt used for analysis
-
-
-# TaxonomyItem has been moved to models/hierarchy.py
-
-
-# HierarchyNode has been moved to models/hierarchy.py
-
-
-# get_debug_filename has been moved to utils/debug.py
-
-
-# save_debug_results has been moved to utils/debug.py
-
-
-# append_debug_result has been moved to utils/debug.py
-
-
-# load_debug_results has been moved to utils/debug.py
-
-# load_debug_results_with_categories has been moved to utils/debug.py
-
-
 class SimplifiedDocumentAnalyzer:
     """
     Compatibility facade for the clean DocumentAnalyzer architecture
@@ -71,10 +47,10 @@ class SimplifiedDocumentAnalyzer:
         # Update reference for compatibility
         self.hierarchy_nodes = self._analyzer.hierarchy_nodes
     
-    async def analyze_document(self, document_text: str, debug: bool = False) -> Dict[str, Any]:
+    async def analyze_document(self, document_text: str, debug: bool = False, thread_id: str = None) -> Dict[str, Any]:
         """Main analysis function - delegates to clean implementation"""
         self.debug_enabled = debug
-        result = await self._analyzer.analyze_document(document_text, debug)
+        result = await self._analyzer.analyze_document(document_text, debug, thread_id)
         # Update reference for compatibility
         self.hierarchy_nodes = self._analyzer.hierarchy_nodes
         return result

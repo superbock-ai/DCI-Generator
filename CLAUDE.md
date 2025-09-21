@@ -298,8 +298,9 @@ All parameters for analysis jobs:
 - **Debugging Tools**: Detailed trace inspection for prompt engineering and optimization
 - **Cost Tracking**: Monitor OpenAI API costs and usage patterns per analysis job
 - **Quality Assurance**: Compare analysis results across different model versions and parameters
+- **Thread Grouping**: All LLM calls for a single analysis job are grouped using Celery task ID as thread identifier
 - **Automatic Tagging**: All traces tagged with "dci-generator", "insurance-analysis", "structured-output"
-- **Rich Metadata**: Each trace includes item names, model info, prompt lengths, and analysis context
+- **Rich Metadata**: Each trace includes item names, model info, prompt lengths, analysis context, and thread/product IDs
 - **Project Organization**: Traces organized under configurable LangSmith project name
 - **Optional Integration**: LangSmith tracing can be enabled/disabled without affecting core functionality
 
@@ -314,6 +315,13 @@ All parameters for analysis jobs:
    ```
 4. Restart containers: `docker compose restart`
 5. All LLM calls will now be traced in your LangSmith dashboard
+
+**Thread Grouping Benefits**:
+- **Complete Analysis Visibility**: See all segment, benefit, and modifier extractions for a single document grouped together
+- **Thread ID Format**: `task_{celery_task_id}` - directly correlates with Celery job monitoring
+- **Easy Debugging**: Trace the entire analysis pipeline from start to finish in one view
+- **Performance Analysis**: Understand bottlenecks across the complete analysis workflow
+- **Error Correlation**: Quickly identify which specific extractions failed within a job
 
 ### Security
 - **Environment variables**: All secrets stored in .env file
