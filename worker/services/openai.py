@@ -1,12 +1,12 @@
 """
-LLM Service for the DCI Generator using native LangChain structured output with LangSmith tracing
+LLM Service for the DCI Generator using native LangChain structured output
+LangSmith tracing is automatic when environment variables are set
 """
 
 import asyncio
 import os
 from typing import Any, Dict, Optional
 from langchain_openai import ChatOpenAI
-from langsmith import Client as LangSmithClient
 from models import AnalysisResult
 from utils import AnalyzerConfig, get_analysis_logger
 
@@ -15,12 +15,12 @@ class LLMService:
     """Service for managing LLM interactions with native structured output"""
     
     def __init__(self, config: AnalyzerConfig):
-        """Initialize the LLM service with configuration and optional LangSmith tracing"""
+        """Initialize the LLM service with configuration"""
         self.config = config
         self.logger = get_analysis_logger()
 
-        # Configure LangSmith tracing if enabled
-        self._setup_langsmith_tracing()
+        # Set up LangSmith environment variables if configured
+        self._setup_langsmith_environment()
 
         # Create LLM with native structured output - clean and simple
         base_llm = ChatOpenAI(
@@ -34,40 +34,35 @@ class LLMService:
         self.logger.debug_operation("llm_service_init",
                                    f"Initialized LLM service with model: {self.config.openai_model}, LangSmith tracing: {tracing_status}")
 
-    def _setup_langsmith_tracing(self):
-        """Configure LangSmith tracing environment variables"""
+    def _setup_langsmith_environment(self):
+        """Set up LangSmith environment variables for automatic tracing"""
         if self.config.langsmith_tracing_enabled and self.config.langsmith_api_key:
-            # Set environment variables for LangChain/LangSmith
+            # LangChain automatically detects these environment variables
             os.environ["LANGCHAIN_TRACING_V2"] = "true"
-            os.environ["LANGCHAIN_API_KEY"] = self.config.langsmith_api_key
+            os.environ["LANGSMITH_API_KEY"] = self.config.langsmith_api_key
             if self.config.langsmith_project:
                 os.environ["LANGCHAIN_PROJECT"] = self.config.langsmith_project
 
-            # Initialize LangSmith client for additional functionality if needed
-            try:
-                self.langsmith_client = LangSmithClient(api_key=self.config.langsmith_api_key)
-                self.logger.debug_operation("langsmith_init", f"LangSmith tracing enabled for project: {self.config.langsmith_project}")
-            except Exception as e:
-                self.logger.debug_operation("langsmith_init", f"LangSmith client initialization failed: {e}")
-                self.langsmith_client = None
-        else:
-            self.langsmith_client = None
-            if self.config.langsmith_tracing_enabled:
-                self.logger.debug_operation("langsmith_init", "LangSmith tracing requested but API key not provided")
+            self.logger.debug_operation("langsmith_init", f"LangSmith automatic tracing enabled for project: {self.config.langsmith_project}")
+        elif self.config.langsmith_tracing_enabled:
+            self.logger.debug_operation("langsmith_init", "LangSmith tracing requested but API key not provided")
 
     async def analyze_with_structured_output(self, prompt: str, item_name: str = None) -> AnalysisResult:
         """
-        Analyze text using native LangChain structured output with LangSmith tracing
+        Analyze text using native LangChain structured output
+        LangSmith tracing is automatic when environment variables are set
 
         Args:
             prompt: The complete prompt to send to the LLM
-            item_name: Optional item name for logging and tracing
+            item_name: Optional item name for logging
 
         Returns:
             AnalysisResult: Structured analysis result
         """
         try:
-            # Prepare metadata for LangSmith tracing
+            # LangChain automatically traces when LANGCHAIN_TRACING_V2=true
+            # Add custom run name and metadata for better tracing
+            run_name = f"analyze_{item_name}" if item_name else "analyze_document"
             metadata = {
                 "item_name": item_name or "unknown_item",
                 "model": self.config.openai_model,
@@ -75,18 +70,14 @@ class LLMService:
                 "prompt_length": len(prompt)
             }
 
-            # Use native structured output with enhanced tracing metadata
-            if self.config.langsmith_tracing_enabled:
-                # Include tracing tags and metadata for LangSmith
-                result = await self._structured_llm.ainvoke(
-                    prompt,
-                    config={
-                        "tags": ["dci-generator", "insurance-analysis", "structured-output"],
-                        "metadata": metadata
-                    }
-                )
-            else:
-                result = await self._structured_llm.ainvoke(prompt)
+            result = await self._structured_llm.ainvoke(
+                prompt,
+                config={
+                    "run_name": run_name,
+                    "tags": ["dci-generator", "insurance-analysis", "structured-output"],
+                    "metadata": metadata
+                }
+            )
 
             # Add the input prompt to the result
             if hasattr(result, 'input_prompt'):

@@ -70,7 +70,7 @@ class AnalyzerConfig:
 
         # LangSmith configuration (optional)
         langsmith_tracing_enabled = os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"
-        langsmith_api_key = os.getenv("LANGCHAIN_API_KEY")
+        langsmith_api_key = os.getenv("LANGSMITH_API_KEY")
         langsmith_project = os.getenv("LANGCHAIN_PROJECT", "dci-generator")
 
         return cls(
