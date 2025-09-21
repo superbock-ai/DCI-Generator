@@ -5,11 +5,9 @@ REST API interface for submitting and monitoring analysis jobs.
 
 import os
 from typing import Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, Depends, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
-import jwt
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -33,13 +31,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Security scheme
-security = HTTPBearer()
-
-# Configuration
-DIRECTUS_SECRET = os.getenv("DIRECTUS_SECRET")
-if not DIRECTUS_SECRET:
-    raise ValueError("DIRECTUS_SECRET environment variable is required")
+# No authentication required for internal API calls
 
 
 # Pydantic models for request/response
@@ -91,29 +83,7 @@ class JobStatusResponse(BaseModel):
     progress: Optional[Dict[str, Any]] = Field(None, description="Progress information")
 
 
-# JWT Authentication
-def verify_jwt_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
-    """
-    Verify JWT token using Directus secret.
-    """
-    try:
-        token = credentials.credentials
-
-        # Decode JWT token
-        payload = jwt.decode(token, DIRECTUS_SECRET, algorithms=["HS256"])
-
-        return payload
-
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired"
-        )
-    except jwt.InvalidTokenError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
-        )
+# Authentication removed for internal API usage
 
 
 # Health check endpoint
@@ -143,10 +113,7 @@ def get_celery_app():
 
 # Job submission endpoints
 @app.post("/jobs/analysis", response_model=JobResponse)
-async def submit_analysis_job(
-    job_request: AnalysisJobRequest,
-    user: Dict[str, Any] = Depends(verify_jwt_token)
-):
+async def submit_analysis_job(job_request: AnalysisJobRequest):
     """
     Submit an analysis job for processing.
     """
@@ -178,10 +145,7 @@ async def submit_analysis_job(
 
 
 @app.post("/jobs/cleanup", response_model=JobResponse)
-async def submit_cleanup_job(
-    job_request: CleanupJobRequest,
-    user: Dict[str, Any] = Depends(verify_jwt_token)
-):
+async def submit_cleanup_job(job_request: CleanupJobRequest):
     """
     Submit a cleanup job for processing.
     """
@@ -213,10 +177,7 @@ async def submit_cleanup_job(
 
 
 @app.get("/jobs/{job_id}/status", response_model=JobStatusResponse)
-async def get_job_status(
-    job_id: str,
-    user: Dict[str, Any] = Depends(verify_jwt_token)
-):
+async def get_job_status(job_id: str):
     """
     Get the status of a submitted job.
     """

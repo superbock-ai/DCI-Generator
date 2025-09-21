@@ -838,16 +838,30 @@ class DirectusSeeder:
 
     def seed_analysis_results(self, analysis_results: Dict[str, Any], product_id: str, graphql_url: str, auth_token: str, taxonomy_data=None):
         """Main method to seed all analysis results
-        
+
         Args:
             analysis_results: The analysis results to seed
-            product_id: ID of the existing dcm_product 
+            product_id: ID of the existing dcm_product
             graphql_url: GraphQL endpoint URL
             auth_token: Authentication token
             taxonomy_data: Optional pre-fetched taxonomy data to avoid duplicate GraphQL calls
         """
         print(f"Starting to seed {product_id} analysis results {'(DRY RUN)' if self.dry_run else ''}")
         print("=" * 60)
+
+        # Always cleanup existing analysis data before seeding to ensure clean state
+        if not self.dry_run:
+            print(f"\n🧹 Cleaning up existing analysis data for product {product_id}...")
+            print("-" * 40)
+            try:
+                self.cleanup_analysis_data_by_product_id(product_id)
+                print("✓ Analysis data cleanup completed successfully")
+            except Exception as e:
+                print(f"⚠️  Cleanup failed (continuing with seeding): {e}")
+            print("-" * 40)
+        else:
+            print("(DRY RUN: Analysis data cleanup would be performed here)")
+        print()
 
         # Get DCM ID from existing product and fetch/set taxonomy mappings
         if not self.dry_run:
@@ -942,6 +956,121 @@ class DirectusSeeder:
         print(f"\n✓ Seeding completed {'(DRY RUN)' if self.dry_run else ''}!")
 
     # print_summary method removed - no longer tracking seeded data in memory
+
+    def cleanup_analysis_data_by_product_id(self, product_id: str):
+        """Delete all analysis data associated with a dcm_product but keep the product itself"""
+        print(f"Cleaning up analysis data for product: {product_id}")
+        print("=" * 60)
+
+        # Verify the product exists
+        try:
+            product = self.client.get_items('dcm_product', {'filter[id][_eq]': product_id})
+            if not product:
+                print(f"Error: Product {product_id} not found")
+                return False
+        except Exception as e:
+            print(f"Error fetching product: {e}")
+            return False
+
+        # Query and delete in reverse dependency order to respect foreign key constraints
+        deletion_stats = {
+            'exclusions': 0,
+            'limits': 0,
+            'conditions': 0,
+            'benefits': 0,
+            'segments': 0
+        }
+
+        # 1. Delete exclusions (no dependencies on other items)
+        print("1. Deleting exclusions...")
+        try:
+            exclusions = self.client.get_items('insurance_dcm_exclusion', {'filter[dcm_product][_eq]': product_id})
+            for exclusion in exclusions:
+                try:
+                    self.client.delete_item('insurance_dcm_exclusion', exclusion['id'])
+                    deletion_stats['exclusions'] += 1
+                    print(f"  ✓ Deleted exclusion: {exclusion.get('exclusion_name', exclusion['id'])}")
+                except Exception as e:
+                    print(f"  ✗ Failed to delete exclusion {exclusion['id']}: {e}")
+        except Exception as e:
+            print(f"Error fetching exclusions: {e}")
+
+        # 2. Delete limits (no dependencies on other items)
+        print("\n2. Deleting limits...")
+        try:
+            limits = self.client.get_items('insurance_dcm_limit', {'filter[dcm_product][_eq]': product_id})
+            for limit in limits:
+                try:
+                    self.client.delete_item('insurance_dcm_limit', limit['id'])
+                    deletion_stats['limits'] += 1
+                    print(f"  ✓ Deleted limit: {limit.get('limit_name', limit['id'])}")
+                except Exception as e:
+                    print(f"  ✗ Failed to delete limit {limit['id']}: {e}")
+        except Exception as e:
+            print(f"Error fetching limits: {e}")
+
+        # 3. Delete conditions (no dependencies on other items)
+        print("\n3. Deleting conditions...")
+        try:
+            conditions = self.client.get_items('insurance_dcm_condition', {'filter[dcm_product][_eq]': product_id})
+            for condition in conditions:
+                try:
+                    self.client.delete_item('insurance_dcm_condition', condition['id'])
+                    deletion_stats['conditions'] += 1
+                    print(f"  ✓ Deleted condition: {condition.get('condition_name', condition['id'])}")
+                except Exception as e:
+                    print(f"  ✗ Failed to delete condition {condition['id']}: {e}")
+        except Exception as e:
+            print(f"Error fetching conditions: {e}")
+
+        # 4. Delete benefits (depends on segments)
+        print("\n4. Deleting benefits...")
+        try:
+            segments = self.client.get_items('insurance_dcm_segment', {'filter[dcm_product][_eq]': product_id})
+            for segment in segments:
+                segment_benefits = self.client.get_items('insurance_dcm_benefit', {'filter[insurance_dcm_segment][_eq]': segment['id']})
+                for benefit in segment_benefits:
+                    try:
+                        self.client.delete_item('insurance_dcm_benefit', benefit['id'])
+                        deletion_stats['benefits'] += 1
+                        print(f"  ✓ Deleted benefit: {benefit.get('benefit_name', benefit['id'])}")
+                    except Exception as e:
+                        print(f"  ✗ Failed to delete benefit {benefit['id']}: {e}")
+        except Exception as e:
+            print(f"Error fetching/deleting benefits: {e}")
+
+        # 5. Delete segments (keep product)
+        print("\n5. Deleting segments...")
+        try:
+            segments = self.client.get_items('insurance_dcm_segment', {'filter[dcm_product][_eq]': product_id})
+            for segment in segments:
+                try:
+                    self.client.delete_item('insurance_dcm_segment', segment['id'])
+                    deletion_stats['segments'] += 1
+                    print(f"  ✓ Deleted segment: {segment.get('segment_name', segment['id'])}")
+                except Exception as e:
+                    print(f"  ✗ Failed to delete segment {segment['id']}: {e}")
+        except Exception as e:
+            print(f"Error fetching/deleting segments: {e}")
+
+        # Summary (product preserved)
+        print(f"\n✓ Analysis data cleanup completed!")
+        print("Summary:")
+        print(f"- Exclusions: {deletion_stats['exclusions']} deleted")
+        print(f"- Limits: {deletion_stats['limits']} deleted")
+        print(f"- Conditions: {deletion_stats['conditions']} deleted")
+        print(f"- Benefits: {deletion_stats['benefits']} deleted")
+        print(f"- Segments: {deletion_stats['segments']} deleted")
+        print(f"- Product: {product_id} preserved")
+
+        total_deleted = sum(deletion_stats.values())
+        print(f"- Total items: {total_deleted} deleted")
+
+        return True
+
+    def cleanup_product_data(self, product_id: str):
+        """Alias for cleanup_analysis_data_by_product_id for backward compatibility"""
+        return self.cleanup_analysis_data_by_product_id(product_id)
 
     def cleanup_by_product_id(self, product_id: str):
         """Delete all data associated with a dcm_product"""
